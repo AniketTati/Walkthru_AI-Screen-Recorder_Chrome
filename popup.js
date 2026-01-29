@@ -29,11 +29,25 @@ sourceBtns.forEach(btn => {
 });
 
 // Camera Toggle
-cameraToggle.addEventListener('change', () => {
+cameraToggle.addEventListener('change', async () => {
   if (cameraToggle.checked) {
     cameraOptions.classList.remove('hidden');
+    // Check if camera devices are available
+    try {
+      const devices = await navigator.mediaDevices.enumerateDevices();
+      const hasCamera = devices.some(device => device.kind === 'videoinput');
+      
+      if (!hasCamera) {
+        showError('No camera detected. Please connect a camera.');
+        cameraToggle.checked = false;
+        cameraOptions.classList.add('hidden');
+      }
+    } catch (error) {
+      console.error('Device enumeration error:', error);
+    }
   } else {
     cameraOptions.classList.add('hidden');
+    showError(''); // Clear any camera-related errors
   }
 });
 
@@ -155,12 +169,26 @@ async function getScreenStream() {
 async function getCameraStream() {
   try {
     const stream = await navigator.mediaDevices.getUserMedia({
-      video: { width: 320, height: 240 },
+      video: { 
+        width: { ideal: 640 },
+        height: { ideal: 480 }
+      },
       audio: false
     });
     return stream;
   } catch (error) {
-    showError('Camera access denied or failed');
+    console.error('Camera error:', error);
+    
+    if (error.name === 'NotAllowedError' || error.name === 'PermissionDeniedError') {
+      showError('Camera access denied. Please allow camera permissions in your browser settings and try again.');
+    } else if (error.name === 'NotFoundError' || error.name === 'DevicesNotFoundError') {
+      showError('No camera found. Please connect a camera and try again.');
+    } else if (error.name === 'NotReadableError' || error.name === 'TrackStartError') {
+      showError('Camera is already in use by another application. Close other apps using the camera and try again.');
+    } else {
+      showError('Camera access failed: ' + error.message);
+    }
+    
     return null;
   }
 }
