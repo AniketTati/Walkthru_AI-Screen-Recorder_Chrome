@@ -158,6 +158,15 @@ label {
   cursor: pointer;
 }
 
+.camera-note {
+  margin-top: 10px;
+  margin-bottom: 0;
+  font-size: 11px;
+  color: #666;
+  font-style: italic;
+  line-height: 1.4;
+}
+
 .hidden {
   display: none !important;
 }

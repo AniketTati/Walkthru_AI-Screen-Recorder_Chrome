@@ -47,6 +47,8 @@ Recordings are saved as `.webm` files with VP9 codec.
 - `desktopCapture`: Screen and window recording capability
 - `storage`: Save user preferences (future feature)
 
+**Note:** Camera and microphone access is requested at runtime when you enable those features. You'll see a browser permission prompt the first time you try to use the camera.
+
 ## Technical Details
 
 - Uses MediaRecorder API for recording
@@ -58,3 +60,22 @@ Recordings are saved as `.webm` files with VP9 codec.
 - Chrome 70+
 - Edge 79+
 - Any Chromium-based browser with extension support
+
+## Troubleshooting
+
+### Camera Access Denied
+
+If you get a "Camera access denied" error:
+
+1. **Check browser permissions**: Go to `chrome://settings/content/camera` and ensure the site/extension is allowed
+2. **Grant permission when prompted**: When you start recording with camera enabled, click "Allow" on the permission prompt
+3. **Check if camera is in use**: Close other applications that might be using your camera (Zoom, Skype, etc.)
+4. **Try reloading the extension**: Go to `chrome://extensions/`, find Screen Recorder, and click the reload icon
+
+### No Camera Detected
+
+If no camera is found:
+- Ensure your camera is properly connected
+- Check if your camera works in other applications
+- Try unplugging and reconnecting your camera
+- Restart your browser
