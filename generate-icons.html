@@ -74,27 +74,39 @@
 
     function generateIcons() {
       const sizes = [
-        { id: 'icon16', size: 16 },
-        { id: 'icon48', size: 48 },
-        { id: 'icon128', size: 128 }
+        { id: 'icon16', size: 16, filename: 'icon16.png' },
+        { id: 'icon48', size: 48, filename: 'icon48.png' },
+        { id: 'icon128', size: 128, filename: 'icon128.png' }
       ];
 
-      sizes.forEach(({ id, size }) => {
+      let downloadCount = 0;
+      
+      sizes.forEach(({ id, size, filename }, index) => {
         const canvas = document.getElementById(id);
         drawIcon(canvas, size);
         
-        // Download
-        canvas.toBlob((blob) => {
-          const url = URL.createObjectURL(blob);
-          const a = document.createElement('a');
-          a.href = url;
-          a.download = `${id}.png`;
-          a.click();
-          URL.revokeObjectURL(url);
-        });
+        // Download with delay to prevent browser blocking multiple downloads
+        setTimeout(() => {
+          canvas.toBlob((blob) => {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            
+            setTimeout(() => {
+              URL.revokeObjectURL(url);
+              downloadCount++;
+              
+              if (downloadCount === sizes.length) {
+                alert('All 3 icons generated and downloaded!\n\nFiles:\n- icon16.png\n- icon48.png\n- icon128.png\n\nThey are ready to use in your extension.');
+              }
+            }, 100);
+          }, 'image/png');
+        }, index * 200);
       });
-
-      alert('Icons generated and downloaded! Place them in the extension folder.');
     }
 
     // Draw icons on page load
