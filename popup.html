@@ -10,52 +10,57 @@
   <div class="container">
     <h1>Screen Recorder</h1>
     
-    <!-- Recording Source -->
-    <div class="section">
-      <label>Record:</label>
-      <div class="button-group">
-        <button class="btn source-btn active" data-source="tab">Tab</button>
-        <button class="btn source-btn" data-source="window">Window</button>
-        <button class="btn source-btn" data-source="screen">Entire Screen</button>
-      </div>
-    </div>
-
-    <!-- Audio Toggle -->
-    <div class="section">
-      <label class="toggle-label">
-        <input type="checkbox" id="audioToggle" checked>
-        <span class="toggle-text">Audio</span>
-      </label>
-    </div>
-
-    <!-- Camera Options -->
-    <div class="section">
-      <label class="toggle-label">
-        <input type="checkbox" id="cameraToggle">
-        <span class="toggle-text">Camera</span>
-      </label>
-      
-      <div id="cameraOptions" class="camera-options hidden">
-        <div class="radio-group">
-          <label class="radio-label">
-            <input type="radio" name="cameraMode" value="pip" checked>
-            <span>Picture-in-Picture</span>
-          </label>
-          <label class="radio-label">
-            <input type="radio" name="cameraMode" value="separate">
-            <span>Separate File</span>
-          </label>
+    <!-- Recording Controls (shown when NOT recording) -->
+    <div id="controls">
+      <!-- Recording Source -->
+      <div class="section">
+        <label>Record:</label>
+        <div class="button-group">
+          <button class="btn source-btn active" data-source="tab">Tab</button>
+          <button class="btn source-btn" data-source="window">Window</button>
+          <button class="btn source-btn" data-source="screen">Entire Screen</button>
         </div>
-        <p class="camera-note">You'll be asked for camera permission when recording starts.</p>
+      </div>
+
+      <!-- Audio Toggle -->
+      <div class="section">
+        <label class="toggle-label">
+          <input type="checkbox" id="audioToggle" checked>
+          <span class="toggle-text">Audio</span>
+        </label>
+      </div>
+
+      <!-- Camera Options -->
+      <div class="section">
+        <label class="toggle-label">
+          <input type="checkbox" id="cameraToggle">
+          <span class="toggle-text">Camera</span>
+        </label>
+        
+        <div id="cameraOptions" class="camera-options hidden">
+          <div class="radio-group">
+            <label class="radio-label">
+              <input type="radio" name="cameraMode" value="pip" checked>
+              <span>Picture-in-Picture</span>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="cameraMode" value="separate">
+              <span>Separate File</span>
+            </label>
+          </div>
+          <button id="setupCameraBtn" class="btn btn-setup">Setup Camera Permission</button>
+          <p class="camera-note">First time? Click to grant camera access.</p>
+        </div>
       </div>
     </div>
 
-    <!-- Recording Status -->
+    <!-- Recording Status (shown when recording) -->
     <div id="recordingStatus" class="hidden">
       <div class="status-indicator">
         <span class="recording-dot"></span>
         <span id="recordingTime">00:00</span>
       </div>
+      <p class="recording-info">Recording in progress...<br>You can close this popup</p>
     </div>
 
     <!-- Main Action Button -->
@@ -63,6 +68,13 @@
 
     <!-- Error Message -->
     <div id="errorMsg" class="error-msg hidden"></div>
+
+    <!-- Help Link -->
+    <div class="help-section">
+      <a href="TROUBLESHOOTING.html" target="_blank" class="help-link">
+        ❓ Camera not working? View troubleshooting guide
+      </a>
+    </div>
   </div>
 
   <script src="popup.js"></script>
