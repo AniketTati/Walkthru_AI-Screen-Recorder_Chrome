@@ -48,11 +48,12 @@ A simple and clean Chrome extension for recording your screen, window, or tab wi
    - **Separate File**: Screen and camera saved as two separate files
 5. Click "Start Recording"
 6. Select the screen/window/tab you want to record in the browser dialog
-7. Recording starts - popup shows timer
-8. You can close the popup, recording continues in background
-9. Reopen popup anytime to check timer or stop recording
-10. Click "Stop Recording" when done
-11. Your recording(s) will automatically download
+7. **Popup becomes compact** - shows just recording timer and stop button
+8. **You can close/reopen the popup anytime** - recording continues in background
+9. **Switch tabs freely** - recording persists
+10. Reopen popup to see timer or stop recording
+11. Click "Stop Recording" when done
+12. Your recording(s) will automatically download
 
 ## File Format
 
