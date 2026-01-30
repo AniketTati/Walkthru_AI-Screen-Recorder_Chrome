@@ -1,12 +1,18 @@
 {
   "manifest_version": 3,
   "name": "Screen Recorder",
-  "version": "1.0.0",
-  "description": "Simple screen recorder - Tab, Window, or Entire Screen with audio and camera options",
+  "version": "2.0.0",
+  "description": "Loom-style screen recorder with camera overlay, pause/resume, and floating controls",
   "permissions": [
     "activeTab",
     "desktopCapture",
-    "storage"
+    "storage",
+    "offscreen",
+    "scripting",
+    "tabs"
+  ],
+  "host_permissions": [
+    "<all_urls>"
   ],
   "action": {
     "default_popup": "popup.html",
@@ -26,7 +32,7 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["permissions.html"],
+      "resources": ["content.css"],
       "matches": ["<all_urls>"]
     }
   ]
