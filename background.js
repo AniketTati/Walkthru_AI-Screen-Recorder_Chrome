@@ -38,6 +38,9 @@ async function handleMessage(message, sender) {
     case 'stopRecording':
       return await stopRecording();
 
+    case 'captureScreenshot':
+      return await captureScreenshot(message.config);
+
     case 'pauseRecording':
       return await pauseRecording();
 
@@ -77,6 +80,65 @@ async function handleMessage(message, sender) {
 
     default:
       return { error: 'Unknown action' };
+  }
+}
+
+// Capture screenshot
+async function captureScreenshot(config) {
+  console.log('Background: Capturing screenshot with config:', config);
+  
+  try {
+    const source = config.source || 'tab';
+    
+    if (source === 'tab') {
+      // Use chrome.tabs.captureVisibleTab for current tab
+      const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
+      
+      if (!tab) {
+        return { success: false, error: 'No active tab found' };
+      }
+      
+      // Check if it's a valid URL
+      if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+        return { success: false, error: 'Cannot capture screenshot on this page. Please navigate to a regular website.' };
+      }
+      
+      // Capture the visible tab
+      const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
+      
+      // Generate filename with timestamp
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+      const filename = `screenshot-${timestamp}.png`;
+      
+      // Download the screenshot
+      const downloadId = await chrome.downloads.download({
+        url: dataUrl,
+        filename: filename,
+        saveAs: true
+      });
+      
+      console.log('Background: Screenshot download started, id:', downloadId);
+      return { success: true, downloadId };
+      
+    } else {
+      // For screen or window capture, use offscreen document with getDisplayMedia
+      await ensureOffscreenDocument();
+      
+      const response = await chrome.runtime.sendMessage({
+        target: 'offscreen',
+        action: 'captureScreenshot',
+        config: config
+      });
+      
+      if (!response || !response.success) {
+        throw new Error(response?.error || 'Failed to capture screenshot');
+      }
+      
+      return { success: true };
+    }
+  } catch (e) {
+    console.error('Background: Screenshot capture failed:', e);
+    return { success: false, error: e.message };
   }
 }
 
