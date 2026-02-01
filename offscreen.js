@@ -76,6 +76,18 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       cleanup();
       sendResponse({ success: true });
       return true;
+
+    case 'captureScreenshot':
+      captureScreenshot(message.config)
+        .then(result => {
+          console.log('Offscreen: Screenshot captured');
+          sendResponse(result);
+        })
+        .catch(err => {
+          console.error('Offscreen: Screenshot failed:', err);
+          sendResponse({ success: false, error: err.message });
+        });
+      return true;
       
     default:
       console.log('Offscreen: Unknown action:', message.action);
@@ -341,6 +353,82 @@ function cleanup() {
   data = [];
   
   console.log('Offscreen: Cleanup complete');
+}
+
+// Capture screenshot using getDisplayMedia
+async function captureScreenshot(config) {
+  console.log('Offscreen: Capturing screenshot...');
+  
+  let stream = null;
+  
+  try {
+    // Get display media for screenshot
+    stream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        width: { ideal: 3840 },
+        height: { ideal: 2160 }
+      },
+      audio: false
+    });
+    
+    const videoTrack = stream.getVideoTracks()[0];
+    if (!videoTrack) {
+      throw new Error('No video track available');
+    }
+    
+    // Create a video element to capture a frame
+    const video = document.createElement('video');
+    video.srcObject = stream;
+    video.muted = true;
+    
+    await new Promise((resolve, reject) => {
+      video.onloadedmetadata = () => {
+        video.play().then(resolve).catch(reject);
+      };
+      video.onerror = reject;
+    });
+    
+    // Wait a moment for the frame to be ready
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
+    // Get video dimensions
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    
+    // Create canvas and capture the frame
+    const canvas = document.createElement('canvas');
+    canvas.width = width;
+    canvas.height = height;
+    
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(video, 0, 0, width, height);
+    
+    // Convert to data URL
+    const dataUrl = canvas.toDataURL('image/png');
+    
+    // Stop the stream
+    stream.getTracks().forEach(t => t.stop());
+    stream = null;
+    
+    // Generate filename
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+    const filename = `screenshot-${timestamp}.png`;
+    
+    // Send to background for download
+    chrome.runtime.sendMessage({
+      action: 'saveRecording',
+      data: dataUrl,
+      filename: filename
+    });
+    
+    return { success: true };
+    
+  } catch (e) {
+    if (stream) {
+      stream.getTracks().forEach(t => t.stop());
+    }
+    throw e;
+  }
 }
 
 console.log('Offscreen: Script initialization complete');

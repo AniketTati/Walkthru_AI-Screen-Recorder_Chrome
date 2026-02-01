@@ -3,9 +3,12 @@
 // DOM Elements
 const cameraPreview = document.getElementById('cameraPreview');
 const previewPlaceholder = document.getElementById('previewPlaceholder');
+const previewSection = document.querySelector('.preview-section');
 const sourceSelect = document.getElementById('sourceSelect');
 const cameraSelect = document.getElementById('cameraSelect');
 const micSelect = document.getElementById('micSelect');
+const cameraRow = document.getElementById('cameraRow');
+const micRow = document.getElementById('micRow');
 const cameraModeRow = document.getElementById('cameraModeRow');
 const cameraModeSelect = document.getElementById('cameraModeSelect');
 const photoSection = document.getElementById('photoSection');
@@ -22,6 +25,7 @@ const errorMsg = document.getElementById('errorMsg');
 let previewStream = null;
 let timerInterval = null;
 let profilePhotoData = null; // Base64 photo data
+let currentMode = 'video'; // 'video' or 'photo'
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -129,12 +133,39 @@ async function savePreferences() {
 
 // Update camera options visibility (mode selector and photo section)
 function updateCameraOptionsVisibility() {
-  if (cameraSelect.value) {
+  if (currentMode === 'video' && cameraSelect.value) {
     cameraModeRow.style.display = 'flex';
     photoSection.style.display = 'block';
   } else {
     cameraModeRow.style.display = 'none';
     photoSection.style.display = 'none';
+  }
+}
+
+// Update UI based on current mode (video or photo)
+function updateModeUI() {
+  if (currentMode === 'photo') {
+    // Photo/Screenshot mode - hide video-specific options
+    previewSection.style.display = 'none';
+    cameraRow.style.display = 'none';
+    micRow.style.display = 'none';
+    cameraModeRow.style.display = 'none';
+    photoSection.style.display = 'none';
+    startBtn.textContent = 'Take Screenshot';
+    
+    // Stop camera preview if running
+    if (previewStream) {
+      previewStream.getTracks().forEach(track => track.stop());
+      previewStream = null;
+      cameraPreview.srcObject = null;
+    }
+  } else {
+    // Video mode - show all options
+    previewSection.style.display = 'block';
+    cameraRow.style.display = 'flex';
+    micRow.style.display = 'flex';
+    startBtn.textContent = 'Start Recording';
+    updateCameraOptionsVisibility();
   }
 }
 
@@ -252,6 +283,8 @@ function setupEventListeners() {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      currentMode = btn.dataset.mode;
+      updateModeUI();
     });
   });
 
@@ -291,8 +324,14 @@ function setupEventListeners() {
   // Remove photo
   removePhotoBtn.addEventListener('click', removePhoto);
 
-  // Start recording
-  startBtn.addEventListener('click', startRecording);
+  // Start recording or take screenshot
+  startBtn.addEventListener('click', () => {
+    if (currentMode === 'photo') {
+      takeScreenshot();
+    } else {
+      startRecording();
+    }
+  });
 
   // Listen for device changes
   navigator.mediaDevices.addEventListener('devicechange', enumerateDevices);
@@ -391,6 +430,45 @@ async function startRecording() {
     showError(e.message || 'Failed to start recording');
     startBtn.disabled = false;
     startBtn.textContent = 'Start Recording';
+  }
+}
+
+// Take screenshot
+async function takeScreenshot() {
+  hideError();
+  startBtn.disabled = true;
+  startBtn.textContent = 'Capturing...';
+
+  const source = sourceSelect.value;
+
+  try {
+    console.log('Popup: Taking screenshot, source:', source);
+    
+    const response = await chrome.runtime.sendMessage({
+      action: 'captureScreenshot',
+      config: { source }
+    });
+    
+    console.log('Popup: Screenshot response:', response);
+
+    if (response && response.success) {
+      startBtn.textContent = 'Screenshot Saved!';
+      setTimeout(() => {
+        startBtn.disabled = false;
+        startBtn.textContent = 'Take Screenshot';
+      }, 1500);
+    } else {
+      const errorMessage = response?.error || 'Failed to capture screenshot';
+      console.error('Popup: Screenshot failed:', errorMessage);
+      showError(errorMessage);
+      startBtn.disabled = false;
+      startBtn.textContent = 'Take Screenshot';
+    }
+  } catch (e) {
+    console.error('Popup: Error taking screenshot:', e);
+    showError(e.message || 'Failed to capture screenshot');
+    startBtn.disabled = false;
+    startBtn.textContent = 'Take Screenshot';
   }
 }
 
