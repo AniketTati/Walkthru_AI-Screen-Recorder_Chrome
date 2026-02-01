@@ -2,15 +2,11 @@
 // Handles floating controls, camera bubble, and countdown
 
 (function() {
-  console.log('Content Script: Initializing...');
-  
   // Prevent multiple injections
   if (window.__screenRecorderInjected) {
-    console.log('Content Script: Already injected, skipping');
     return;
   }
   window.__screenRecorderInjected = true;
-  console.log('Content Script: First injection, proceeding');
 
   // State
   let config = null;
@@ -39,63 +35,48 @@
 
   // Message handler
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-    console.log('Content Script: Received message:', message.action, message);
-    
     try {
       switch (message.action) {
         case 'ping':
-          console.log('Content Script: Responding to ping');
           sendResponse({ success: true });
           break;
         case 'showCountdown':
-          console.log('Content Script: Showing countdown');
           config = message.config;
           showCountdown();
           sendResponse({ success: true });
           break;
         case 'showFloatingControls':
-          console.log('Content Script: Showing floating controls');
           config = message.config;
           showFloatingControls();
           sendResponse({ success: true });
           break;
         case 'hideFloatingControls':
-          console.log('Content Script: Hiding floating controls');
           hideFloatingControls();
           sendResponse({ success: true });
           break;
         case 'updateControls':
-          console.log('Content Script: Updating controls, isPaused:', message.isPaused);
           updateControls(message.isPaused);
           sendResponse({ success: true });
           break;
         case 'toggleCameraBubble':
-          console.log('Content Script: Toggling camera bubble');
           toggleCameraBubble();
           sendResponse({ success: true });
           break;
-        default:
-          console.log('Content Script: Unknown action:', message.action);
       }
     } catch (e) {
-      console.error('Content Script: Error handling message:', e);
       sendResponse({ success: false, error: e.message });
     }
     
     return true;
   });
-  
-  console.log('Content Script: Message listener registered');
 
   // Show countdown overlay
   function showCountdown() {
-    console.log('Content Script: showCountdown() called');
     removeCountdown();
     
     countdownOverlay = document.createElement('div');
     countdownOverlay.className = 'sr-countdown-overlay';
     countdownOverlay.id = 'sr-countdown-overlay';
-    // Inline styles as fallback
     countdownOverlay.style.cssText = `
       position: fixed !important;
       top: 0 !important;
@@ -112,7 +93,6 @@
       z-index: 2147483647 !important;
       font-family: -apple-system, BlinkMacSystemFont, sans-serif !important;
     `;
-    console.log('Content Script: Created countdown overlay element');
     
     const numberEl = document.createElement('div');
     numberEl.className = 'sr-countdown-number';
@@ -145,14 +125,13 @@
     countdownOverlay.appendChild(cancelBtn);
     document.body.appendChild(countdownOverlay);
     
-    // Countdown animation
     let count = 3;
     
     function showNumber() {
       if (count > 0) {
         numberEl.textContent = count;
         numberEl.style.animation = 'none';
-        void numberEl.offsetWidth; // Trigger reflow
+        void numberEl.offsetWidth;
         numberEl.style.animation = 'sr-countdown-pulse 1s ease-out';
         count--;
         setTimeout(showNumber, 1000);
@@ -175,7 +154,6 @@
 
   // Show floating controls
   async function showFloatingControls() {
-    console.log('Content Script: showFloatingControls() called');
     removeFloatingControls();
     
     document.body.classList.add('sr-recording');
@@ -183,12 +161,9 @@
     isPaused = false;
     pausedDuration = 0;
     
-    // Create control bar
-    console.log('Content Script: Creating control bar...');
     controlBar = document.createElement('div');
     controlBar.className = 'sr-control-bar';
     controlBar.id = 'sr-control-bar';
-    // Inline styles as fallback
     controlBar.style.cssText = `
       position: fixed !important;
       bottom: 24px !important;
@@ -208,18 +183,14 @@
     `;
     controlBar.innerHTML = getControlBarHTML(false);
     document.body.appendChild(controlBar);
-    console.log('Content Script: Control bar added to DOM');
     
-    // Setup control bar events
     setupControlBarEvents();
     setupDraggable(controlBar);
     
-    // Create camera bubble if camera enabled
     if (config && config.cameraId) {
       await createCameraBubble();
     }
     
-    // Start timer
     startTimer();
   }
 
@@ -311,34 +282,21 @@
 
   // Handle control actions
   function handleControlAction(action) {
-    console.log('Content: Control action:', action);
-    
     switch (action) {
       case 'stop':
-        console.log('Content: Sending stopRecording message');
-        chrome.runtime.sendMessage({ action: 'stopRecording' }, (response) => {
-          console.log('Content: stopRecording response:', response);
-        });
+        chrome.runtime.sendMessage({ action: 'stopRecording' });
         break;
       case 'pause':
-        chrome.runtime.sendMessage({ action: 'pauseRecording' }, (response) => {
-          console.log('Content: pauseRecording response:', response);
-        });
+        chrome.runtime.sendMessage({ action: 'pauseRecording' });
         break;
       case 'resume':
-        chrome.runtime.sendMessage({ action: 'resumeRecording' }, (response) => {
-          console.log('Content: resumeRecording response:', response);
-        });
+        chrome.runtime.sendMessage({ action: 'resumeRecording' });
         break;
       case 'reset':
-        chrome.runtime.sendMessage({ action: 'resetRecording' }, (response) => {
-          console.log('Content: resetRecording response:', response);
-        });
+        chrome.runtime.sendMessage({ action: 'resetRecording' });
         break;
       case 'delete':
-        chrome.runtime.sendMessage({ action: 'deleteRecording' }, (response) => {
-          console.log('Content: deleteRecording response:', response);
-        });
+        chrome.runtime.sendMessage({ action: 'deleteRecording' });
         break;
       case 'toggleCamera':
         toggleCameraBubble();
@@ -367,14 +325,12 @@
       controlBar.innerHTML = getControlBarHTML(paused);
       setupControlBarEvents();
       
-      // Restore position
       if (currentPosition.left) {
         controlBar.style.left = currentPosition.left;
         controlBar.style.bottom = currentPosition.bottom;
         controlBar.style.transform = currentPosition.transform;
       }
       
-      // Update timer display
       updateTimerDisplay();
     }
   }
@@ -401,57 +357,40 @@
     timerEl.textContent = `${min}:${sec}`;
   }
 
-  // Create camera bubble - based on camera mode setting
+  // Create camera bubble
   async function createCameraBubble() {
     if (!config || !config.cameraId) {
-      console.log('Content: No camera ID provided, skipping camera bubble');
       return;
     }
     
-    console.log('Content: Creating camera bubble, mode:', config.cameraMode);
-    
-    // If user chose "Use Photo" mode, show photo bubble directly
     if (config.cameraMode === 'photo') {
-      console.log('Content: Photo mode selected, showing photo bubble');
       createPhotoBubble();
       cameraBubbleVisible = true;
       return;
     }
     
-    // Otherwise try live camera
-    console.log('Content: Live mode - trying camera:', config.cameraId);
-    
-    // Small delay to ensure popup has released the camera
     await new Promise(resolve => setTimeout(resolve, 500));
     
     try {
-      // Try with exact device ID first, fall back to any camera
       try {
         cameraStream = await navigator.mediaDevices.getUserMedia({
           video: { deviceId: { exact: config.cameraId } }
         });
       } catch (exactError) {
-        console.warn('Content: Exact camera not available, trying any camera:', exactError);
         cameraStream = await navigator.mediaDevices.getUserMedia({
           video: true
         });
       }
       
-      console.log('Content: Camera stream obtained - showing live bubble');
-      
-      // Create the draggable bubble with live video
       createBubbleElement();
       
     } catch (e) {
-      console.log('Content: Camera access blocked by site:', e.message);
-      
-      // Fallback: Show photo if available, otherwise show placeholder icon
       createPhotoBubble();
       cameraBubbleVisible = true;
     }
   }
   
-  // Create photo bubble (either custom photo or default icon placeholder)
+  // Create photo bubble
   function createPhotoBubble() {
     cameraBubble = document.createElement('div');
     cameraBubble.className = 'sr-camera-bubble sr-photo';
@@ -475,12 +414,10 @@
       justify-content: center !important;
     `;
     
-    // Show custom photo if available, otherwise show default icon
     if (config.profilePhoto) {
       cameraBubble.innerHTML = `
         <img src="${config.profilePhoto}" style="width: 100% !important; height: 100% !important; object-fit: cover !important; display: block !important;" alt="Profile">
       `;
-      console.log('Content: Photo bubble added with custom profile photo');
     } else {
       cameraBubble.innerHTML = `
         <div style="text-align: center; color: white;">
@@ -490,15 +427,13 @@
           </svg>
         </div>
       `;
-      console.log('Content: Photo bubble added with default icon (no custom photo set)');
     }
     
     document.body.appendChild(cameraBubble);
-    
     setupDraggable(cameraBubble);
   }
   
-  // Create the actual bubble DOM element with live video
+  // Create bubble element with live video
   function createBubbleElement() {
     cameraBubble = document.createElement('div');
     cameraBubble.className = 'sr-camera-bubble';
@@ -535,20 +470,15 @@
       display: block !important;
     `;
     
-    // Ensure video plays
     video.onloadedmetadata = () => {
-      console.log('Content: Camera video metadata loaded');
-      video.play().catch(e => console.error('Content: Video play error:', e));
+      video.play().catch(() => {});
     };
     
     cameraBubble.appendChild(video);
     document.body.appendChild(cameraBubble);
     
-    console.log('Content: Camera bubble added to DOM');
-    
     setupDraggable(cameraBubble);
     
-    // Click to toggle (only if not dragging)
     let clickTimeout;
     cameraBubble.addEventListener('mousedown', () => {
       clickTimeout = setTimeout(() => {
@@ -576,7 +506,6 @@
       }
     }
     
-    // Update button state
     const cameraBtn = controlBar?.querySelector('.sr-control-btn.camera');
     if (cameraBtn) {
       cameraBtn.classList.toggle('off', !cameraBubbleVisible);
@@ -618,11 +547,9 @@
       const newX = initialX + deltaX;
       const newY = initialY + deltaY;
       
-      // Keep within viewport
       const maxX = window.innerWidth - element.offsetWidth;
       const maxY = window.innerHeight - element.offsetHeight;
       
-      // Use setProperty with 'important' to override inline !important styles
       element.style.setProperty('left', Math.max(0, Math.min(newX, maxX)) + 'px', 'important');
       element.style.setProperty('top', Math.max(0, Math.min(newY, maxY)) + 'px', 'important');
       element.style.setProperty('bottom', 'auto', 'important');

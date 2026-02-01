@@ -1,135 +1,117 @@
 # Screen Recorder Chrome Extension
 
-A simple and clean Chrome extension for recording your screen, window, or tab with audio and camera options.
+A Loom-style screen recorder extension with camera overlay, pause/resume, and floating controls.
 
 ## Features
 
-- **Recording Options**
-  - Tab recording
-  - Window recording
-  - Entire screen recording
+- **Multiple Recording Sources**
+  - Browser tab
+  - Application window
+  - Entire screen
 
-- **Audio Control**
-  - Toggle audio on/off
+- **Audio Options**
+  - System audio capture
+  - Microphone recording
+  - Both combined
 
-- **Camera Recording**
-  - Picture-in-Picture mode (camera overlay on screen recording)
-  - Separate file mode (saves screen and camera as separate files)
+- **Camera Overlay**
+  - Live camera bubble (draggable)
+  - Static profile photo option
+  - Toggle visibility during recording
+
+- **Recording Controls**
+  - 3-second countdown before recording
+  - Floating control bar (draggable)
+  - Pause/Resume recording
+  - Reset and start over
+  - Delete recording
+
+- **Screenshot Mode**
+  - Capture tab, window, or screen
+  - Saves as PNG
 
 ## Installation
 
-1. **Generate Icons**:
-   - Open `generate-icons.html` in your browser
-   - Click "Generate Icons" button
-   - Three PNG files will download automatically
-   - They will be in the extension folder
+### From Chrome Web Store
+1. Visit the Chrome Web Store (link coming soon)
+2. Click "Add to Chrome"
+3. Click "Add Extension"
 
-2. **Load Extension**:
-   - Open Chrome and navigate to `chrome://extensions/`
-   - Enable "Developer mode" (toggle in top-right corner)
-   - Click "Load unpacked"
-   - Select the folder containing these extension files
-   - The Screen Recorder icon should appear in your extensions toolbar
-
-3. **Setup Camera (First Time Only)**:
-   - Click the extension icon
-   - Toggle "Camera" on
-   - Click "Setup Camera Permission" button
-   - Allow camera permission when prompted in the new tab
-   - Close the permission tab
+### Manual Installation (Developer Mode)
+1. Download or clone this repository
+2. Open Chrome and go to `chrome://extensions/`
+3. Enable "Developer mode" (toggle in top-right corner)
+4. Click "Load unpacked"
+5. Select the extension folder
+6. The Screen Recorder icon will appear in your toolbar
 
 ## Usage
 
-1. Click the Screen Recorder extension icon
-2. Choose your recording source (Tab, Window, or Entire Screen)
-3. Toggle Audio on/off as needed
-4. (Optional) Enable Camera and select mode:
-   - **Picture-in-Picture**: Camera appears as overlay in bottom-right corner
-   - **Separate File**: Screen and camera saved as two separate files
-5. Click "Start Recording"
-6. Select the screen/window/tab you want to record in the browser dialog
-7. **Popup becomes compact** - shows just recording timer and stop button
-8. **You can close/reopen the popup anytime** - recording continues in background
-9. **Switch tabs freely** - recording persists
-10. Reopen popup to see timer or stop recording
-11. Click "Stop Recording" when done
-12. Your recording(s) will automatically download
+### Video Recording
+1. Click the extension icon
+2. Select your recording source (Tab, Window, or Screen)
+3. Choose camera and microphone options
+4. Click "Start Recording"
+5. Select what to share in the browser dialog
+6. A 3-second countdown will appear
+7. Use the floating controls to pause, resume, or stop
+8. Recording saves automatically when you stop
+
+### Screenshot
+1. Click the extension icon
+2. Switch to "Photo" mode
+3. Select your source
+4. Click "Take Screenshot"
+5. Choose where to save
 
 ## File Format
 
-Recordings are saved as `.webm` files with VP9 codec.
+- **Video**: WebM with VP9 codec (8 Mbps quality)
+- **Screenshots**: PNG
 
 ## Permissions
 
 - `activeTab`: Access to current tab for recording
-- `desktopCapture`: Screen and window recording capability
-- `storage`: Save user preferences (future feature)
-
-**Note:** Camera access is requested through a separate permission setup page the first time you use it. This ensures Chrome properly shows the permission prompt.
-
-## Technical Details
-
-- Uses MediaRecorder API for recording
-- Canvas API for Picture-in-Picture mode
-- WebM/VP9 encoding for optimal quality and size
+- `desktopCapture`: Screen and window recording
+- `storage`: Save user preferences
+- `offscreen`: Background recording support
+- `scripting`: Inject floating controls
+- `tabs`: Tab management
+- `downloads`: Save recordings
 
 ## Browser Support
 
-- Chrome 70+
-- Edge 79+
+- Chrome 116+ (requires Manifest V3 and offscreen API)
+- Edge 116+
 - Any Chromium-based browser with extension support
 
 ## Troubleshooting
 
-### Camera Access Denied (No Permission Popup)
+### Camera Not Working
+- Ensure camera permissions are granted in Chrome settings
+- Close other applications using the camera
+- Try selecting a different camera
 
-If you get "Camera access denied" without seeing a permission popup, Chrome has likely blocked or remembered a previous denial. Follow these steps:
+### Recording Fails on Certain Pages
+- Chrome extensions cannot record on:
+  - `chrome://` pages
+  - `chrome-extension://` pages
+  - `about:` pages
+- Navigate to a regular website to record
 
-#### Method 1: Reset Extension Permissions (Recommended)
+### No Audio in Recording
+- Make sure to check "Share audio" when selecting the screen/window
+- For tab recording, audio is captured automatically
+- Verify microphone selection in the extension
 
-1. Go to `chrome://extensions/`
-2. Find "Screen Recorder" extension
-3. Click "Remove" to uninstall it
-4. Re-install by clicking "Load unpacked" and selecting the folder again
-5. Click the extension icon
-6. Enable Camera toggle
-7. Click "Test Camera Access" button
-8. When the permission popup appears, click "Allow"
+## Privacy
 
-#### Method 2: Check Chrome Camera Settings
+This extension:
+- Does not collect any personal data
+- Does not send recordings to any server
+- All recordings are saved locally to your device
+- Camera and microphone are only accessed during recording
 
-1. Go to `chrome://settings/content/camera` in Chrome
-2. Check if Camera is set to "Sites can ask to use your camera"
-3. Look in the "Not allowed to use your camera" list
-4. If you see `chrome-extension://...` entries, click the trash icon to remove them
-5. Reload the extension and try again
+## License
 
-#### Method 3: Check System Permissions (Mac)
-
-1. Open System Settings → Privacy & Security → Camera
-2. Make sure "Google Chrome" is checked/enabled
-3. Restart Chrome completely (quit and reopen)
-4. Try the extension again
-
-#### Method 4: Check System Permissions (Windows)
-
-1. Open Settings → Privacy → Camera
-2. Make sure "Allow apps to access your camera" is ON
-3. Make sure "Google Chrome" is allowed
-4. Restart Chrome
-5. Try the extension again
-
-### No Camera Detected
-
-If no camera is found:
-- Ensure your camera is properly connected
-- Check if your camera works in other applications (try opening Camera app or visiting `https://webcamtests.com`)
-- Try unplugging and reconnecting your camera
-- Restart your browser
-
-### Camera Already in Use
-
-If you get "Camera is already in use":
-- Close other applications using the camera (Zoom, Skype, Teams, etc.)
-- Close other browser tabs that might be using the camera
-- Restart your browser if needed
+MIT License - Feel free to modify and distribute.
