@@ -401,14 +401,14 @@
     timerEl.textContent = `${min}:${sec}`;
   }
 
-  // Create camera bubble
+  // Create camera bubble - shows live video if allowed, static placeholder if blocked
   async function createCameraBubble() {
     if (!config || !config.cameraId) {
-      console.log('No camera ID provided, skipping camera bubble');
+      console.log('Content: No camera ID provided, skipping camera bubble');
       return;
     }
     
-    console.log('Creating camera bubble with device:', config.cameraId);
+    console.log('Content: Creating camera bubble with device:', config.cameraId);
     
     // Small delay to ensure popup has released the camera
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -420,84 +420,130 @@
           video: { deviceId: { exact: config.cameraId } }
         });
       } catch (exactError) {
-        console.warn('Exact camera not available, trying any camera:', exactError);
+        console.warn('Content: Exact camera not available, trying any camera:', exactError);
         cameraStream = await navigator.mediaDevices.getUserMedia({
           video: true
         });
       }
       
-      console.log('Camera stream obtained:', cameraStream);
+      console.log('Content: Camera stream obtained - showing live bubble');
       
-      cameraBubble = document.createElement('div');
-      cameraBubble.className = 'sr-camera-bubble';
-      cameraBubble.id = 'sr-camera-bubble';
-      // Inline styles as fallback
-      cameraBubble.style.cssText = `
-        position: fixed !important;
-        bottom: 100px !important;
-        left: 24px !important;
-        width: 120px !important;
-        height: 120px !important;
-        border-radius: 50% !important;
-        overflow: hidden !important;
-        box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
-        border: 4px solid white !important;
-        z-index: 2147483645 !important;
-        cursor: grab !important;
-        background: #1a1a1a !important;
-        display: block !important;
-      `;
-      
-      const video = document.createElement('video');
-      video.srcObject = cameraStream;
-      video.autoplay = true;
-      video.muted = true;
-      video.playsInline = true;
-      video.style.cssText = `
-        width: 100% !important;
-        height: 100% !important;
-        object-fit: cover !important;
-        transform: scaleX(-1) !important;
-        display: block !important;
-      `;
-      
-      // Ensure video plays
-      video.onloadedmetadata = () => {
-        console.log('Content Script: Camera video metadata loaded');
-        video.play().catch(e => console.error('Video play error:', e));
-      };
-      
-      cameraBubble.appendChild(video);
-      document.body.appendChild(cameraBubble);
-      
-      console.log('Camera bubble added to DOM');
-      
-      setupDraggable(cameraBubble);
-      
-      // Click to toggle (only if not dragging)
-      let clickTimeout;
-      cameraBubble.addEventListener('mousedown', () => {
-        clickTimeout = setTimeout(() => {
-          clickTimeout = null;
-        }, 200);
-      });
-      
-      cameraBubble.addEventListener('mouseup', (e) => {
-        if (clickTimeout && !cameraBubble.classList.contains('dragging')) {
-          clearTimeout(clickTimeout);
-          toggleCameraBubble();
-        }
-      });
+      // Create the draggable bubble with live video
+      createBubbleElement();
       
     } catch (e) {
-      console.error('Failed to create camera bubble:', e);
-      // Still show the camera toggle as off since bubble failed
-      cameraBubbleVisible = false;
-      const cameraBtn = controlBar?.querySelector('.sr-control-btn.camera');
-      if (cameraBtn) {
-        cameraBtn.classList.add('off');
-      }
+      console.log('Content: Camera access blocked by site, showing static placeholder:', e.message);
+      
+      // Show a static placeholder bubble (like Loom does when camera is blocked)
+      createPlaceholderBubble();
+      cameraBubbleVisible = true;
     }
+  }
+  
+  // Create a static placeholder bubble when camera is blocked by site (like Loom)
+  function createPlaceholderBubble() {
+    cameraBubble = document.createElement('div');
+    cameraBubble.className = 'sr-camera-bubble sr-placeholder';
+    cameraBubble.id = 'sr-camera-bubble';
+    
+    cameraBubble.style.cssText = `
+      position: fixed !important;
+      bottom: 100px !important;
+      left: 24px !important;
+      width: 120px !important;
+      height: 120px !important;
+      border-radius: 50% !important;
+      overflow: hidden !important;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
+      border: 4px solid white !important;
+      z-index: 2147483645 !important;
+      cursor: grab !important;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%) !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    `;
+    
+    // Show camera icon as static placeholder (this site blocks camera access)
+    cameraBubble.innerHTML = `
+      <div style="text-align: center; color: white;">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+          <polygon points="23 7 16 12 23 17 23 7"></polygon>
+          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
+        </svg>
+      </div>
+    `;
+    
+    document.body.appendChild(cameraBubble);
+    console.log('Content: Static placeholder bubble added (camera blocked by this site)');
+    
+    setupDraggable(cameraBubble);
+  }
+  
+  // Create the actual bubble DOM element with live video
+  function createBubbleElement() {
+    cameraBubble = document.createElement('div');
+    cameraBubble.className = 'sr-camera-bubble';
+    cameraBubble.id = 'sr-camera-bubble';
+    
+    cameraBubble.style.cssText = `
+      position: fixed !important;
+      bottom: 100px !important;
+      left: 24px !important;
+      width: 120px !important;
+      height: 120px !important;
+      border-radius: 50% !important;
+      overflow: hidden !important;
+      box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
+      border: 4px solid white !important;
+      z-index: 2147483645 !important;
+      cursor: grab !important;
+      background: #1a1a1a !important;
+      display: flex !important;
+      align-items: center !important;
+      justify-content: center !important;
+    `;
+    
+    const video = document.createElement('video');
+    video.srcObject = cameraStream;
+    video.autoplay = true;
+    video.muted = true;
+    video.playsInline = true;
+    video.style.cssText = `
+      width: 100% !important;
+      height: 100% !important;
+      object-fit: cover !important;
+      transform: scaleX(-1) !important;
+      display: block !important;
+    `;
+    
+    // Ensure video plays
+    video.onloadedmetadata = () => {
+      console.log('Content: Camera video metadata loaded');
+      video.play().catch(e => console.error('Content: Video play error:', e));
+    };
+    
+    cameraBubble.appendChild(video);
+    document.body.appendChild(cameraBubble);
+    
+    console.log('Content: Camera bubble added to DOM');
+    
+    setupDraggable(cameraBubble);
+    
+    // Click to toggle (only if not dragging)
+    let clickTimeout;
+    cameraBubble.addEventListener('mousedown', () => {
+      clickTimeout = setTimeout(() => {
+        clickTimeout = null;
+      }, 200);
+    });
+    
+    cameraBubble.addEventListener('mouseup', (e) => {
+      if (clickTimeout && !cameraBubble.classList.contains('dragging')) {
+        clearTimeout(clickTimeout);
+        toggleCameraBubble();
+      }
+    });
   }
 
   // Toggle camera bubble visibility
@@ -505,7 +551,11 @@
     cameraBubbleVisible = !cameraBubbleVisible;
     
     if (cameraBubble) {
-      cameraBubble.classList.toggle('hidden', !cameraBubbleVisible);
+      if (cameraBubbleVisible) {
+        cameraBubble.style.setProperty('display', 'flex', 'important');
+      } else {
+        cameraBubble.style.setProperty('display', 'none', 'important');
+      }
     }
     
     // Update button state
