@@ -1,392 +1,262 @@
 // Screen Recorder Offscreen Document
-// Handles actual recording, audio mixing, and PIP compositing
+// Based on Google's official MV3 sample
 
-// State
-let mediaRecorder = null;
-let recordedChunks = [];
+console.log('Offscreen: Script loaded');
+
+let recorder = null;
+let data = [];
 let screenStream = null;
 let cameraStream = null;
 let micStream = null;
-let audioContext = null;
-let compositeStream = null;
-let isRecording = false;
-let isPaused = false;
-let animationId = null;
 
-// DOM Elements
-const screenVideo = document.getElementById('screenVideo');
-const cameraVideo = document.getElementById('cameraVideo');
-const canvas = document.getElementById('compositeCanvas');
-const ctx = canvas.getContext('2d');
-
-// Message handler
+// Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  if (message.target !== 'offscreen') return false;
+  console.log('Offscreen: Received message:', message);
   
-  console.log('Offscreen: Received message:', message.action);
+  if (message.target !== 'offscreen') {
+    return false;
+  }
   
-  handleMessage(message).then(response => {
-    console.log('Offscreen: Sending response:', response);
-    sendResponse(response);
-  }).catch(e => {
-    console.error('Offscreen: Error handling message:', e);
-    sendResponse({ success: false, error: e.message });
-  });
-  
-  return true;
-});
-
-async function handleMessage(message) {
   switch (message.action) {
     case 'startRecording':
-      return await startRecording(message.config);
+      startRecording(message.config)
+        .then(() => {
+          console.log('Offscreen: Recording started successfully');
+          sendResponse({ success: true });
+        })
+        .catch(err => {
+          console.error('Offscreen: Failed to start recording:', err);
+          sendResponse({ success: false, error: err.message });
+        });
+      return true; // Keep channel open
+      
     case 'stopRecording':
-      return await stopRecording();
+      console.log('Offscreen: Stopping recording...');
+      stopRecording();
+      sendResponse({ success: true });
+      return true;
+      
     case 'pauseRecording':
-      return pauseRecording();
+      if (recorder && recorder.state === 'recording') {
+        recorder.pause();
+        console.log('Offscreen: Recording paused');
+      }
+      sendResponse({ success: true });
+      return true;
+      
     case 'resumeRecording':
-      return resumeRecording();
+      if (recorder && recorder.state === 'paused') {
+        recorder.resume();
+        console.log('Offscreen: Recording resumed');
+      }
+      sendResponse({ success: true });
+      return true;
+      
     case 'discardRecording':
-      return discardRecording();
-    default:
-      return { error: 'Unknown action' };
-  }
-}
-
-// Start recording
-async function startRecording(config) {
-  try {
-    recordedChunks = [];
-    
-    // Get screen/window/tab capture
-    const displayMediaOptions = {
-      video: {
-        displaySurface: config.source === 'tab' ? 'browser' : 
-                        config.source === 'window' ? 'window' : 'monitor'
-      },
-      audio: true, // System audio
-      preferCurrentTab: config.source === 'tab'
-    };
-
-    screenStream = await navigator.mediaDevices.getDisplayMedia(displayMediaOptions);
-    
-    // Setup screen video element
-    screenVideo.srcObject = screenStream;
-    await screenVideo.play();
-    await new Promise(resolve => {
-      if (screenVideo.readyState >= 2) resolve();
-      else screenVideo.onloadeddata = resolve;
-    });
-
-    // Get camera if selected
-    if (config.cameraId) {
-      try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: config.cameraId } }
-        });
-        cameraVideo.srcObject = cameraStream;
-        await cameraVideo.play();
-      } catch (e) {
-        console.warn('Failed to get camera:', e);
-      }
-    }
-
-    // Get microphone if selected
-    if (config.micId) {
-      try {
-        micStream = await navigator.mediaDevices.getUserMedia({
-          audio: { deviceId: { exact: config.micId } }
-        });
-      } catch (e) {
-        console.warn('Failed to get microphone:', e);
-      }
-    }
-
-    // Setup final stream for recording
-    let finalStream;
-    
-    if (cameraStream) {
-      // Composite screen + camera
-      finalStream = await createCompositeStream(screenStream, cameraStream, config.micId ? micStream : null);
-    } else {
-      // Just screen with mixed audio
-      finalStream = await createStreamWithMixedAudio(screenStream, micStream);
-    }
-
-    // Create MediaRecorder
-    const mimeType = MediaRecorder.isTypeSupported('video/webm;codecs=vp9')
-      ? 'video/webm;codecs=vp9'
-      : 'video/webm';
-    
-    mediaRecorder = new MediaRecorder(finalStream, { mimeType });
-    
-    mediaRecorder.ondataavailable = (event) => {
-      if (event.data.size > 0) {
-        recordedChunks.push(event.data);
-      }
-    };
-
-    mediaRecorder.onstop = () => {
-      if (recordedChunks.length > 0 && !isPaused) {
-        downloadRecording();
+      console.log('Offscreen: Discarding recording');
+      data = [];
+      if (recorder && recorder.state !== 'inactive') {
+        recorder.stop();
       }
       cleanup();
-      chrome.runtime.sendMessage({ action: 'recordingStopped' });
-    };
+      sendResponse({ success: true });
+      return true;
+      
+    default:
+      console.log('Offscreen: Unknown action:', message.action);
+      return false;
+  }
+});
 
-    // Start recording
-    mediaRecorder.start(1000); // Collect data every second
-    isRecording = true;
-    isPaused = false;
-
-    // Listen for stream end (user stops sharing)
-    screenStream.getVideoTracks()[0].onended = () => {
-      if (isRecording) {
-        stopRecording();
-      }
-    };
-
-    // Notify background that recording started
-    chrome.runtime.sendMessage({ action: 'recordingStarted' });
-
-    return { success: true };
+async function startRecording(config) {
+  console.log('Offscreen: Starting recording with config:', config);
+  
+  if (recorder?.state === 'recording') {
+    throw new Error('Already recording');
+  }
+  
+  data = [];
+  
+  // Get screen capture
+  console.log('Offscreen: Requesting display media...');
+  try {
+    screenStream = await navigator.mediaDevices.getDisplayMedia({
+      video: {
+        displaySurface: 'monitor',
+        width: { ideal: 1920 },
+        height: { ideal: 1080 },
+        frameRate: { ideal: 30 }
+      },
+      audio: true
+    });
   } catch (e) {
-    console.error('Failed to start recording:', e);
-    cleanup();
-    return { success: false, error: e.message };
+    console.error('Offscreen: getDisplayMedia failed:', e);
+    throw e;
   }
-}
-
-// Create stream with mixed audio (system + mic)
-async function createStreamWithMixedAudio(screenStream, micStream) {
-  const tracks = [...screenStream.getVideoTracks()];
   
-  // Check if we have any audio to mix
-  const systemAudioTracks = screenStream.getAudioTracks();
-  const micAudioTracks = micStream ? micStream.getAudioTracks() : [];
-
-  if (systemAudioTracks.length === 0 && micAudioTracks.length === 0) {
-    // No audio
-    return new MediaStream(tracks);
-  }
-
-  if (systemAudioTracks.length === 0) {
-    // Only mic audio
-    tracks.push(...micAudioTracks);
-    return new MediaStream(tracks);
-  }
-
-  if (micAudioTracks.length === 0) {
-    // Only system audio
-    tracks.push(...systemAudioTracks);
-    return new MediaStream(tracks);
-  }
-
-  // Mix both audio sources
-  audioContext = new AudioContext();
-  const destination = audioContext.createMediaStreamDestination();
-
-  // System audio
-  const systemSource = audioContext.createMediaStreamSource(
-    new MediaStream(systemAudioTracks)
-  );
-  systemSource.connect(destination);
-
-  // Mic audio
-  const micSource = audioContext.createMediaStreamSource(
-    new MediaStream(micAudioTracks)
-  );
-  micSource.connect(destination);
-
-  // Add mixed audio track
-  tracks.push(...destination.stream.getAudioTracks());
+  console.log('Offscreen: Got screen stream');
+  console.log('Offscreen: Video tracks:', screenStream.getVideoTracks().length);
+  console.log('Offscreen: Audio tracks:', screenStream.getAudioTracks().length);
   
-  return new MediaStream(tracks);
-}
-
-// Create composite stream with camera PIP
-async function createCompositeStream(screenStream, cameraStream, micStream) {
-  // Setup canvas dimensions
-  canvas.width = screenVideo.videoWidth;
-  canvas.height = screenVideo.videoHeight;
-
-  // Camera bubble settings
-  const bubbleSize = Math.min(canvas.width, canvas.height) * 0.15; // 15% of smaller dimension
-  const bubbleX = 20;
-  const bubbleY = canvas.height - bubbleSize - 20;
-
-  // Draw loop
-  function draw() {
-    if (!isRecording) return;
+  // Verify video track
+  const videoTrack = screenStream.getVideoTracks()[0];
+  if (!videoTrack) {
+    throw new Error('No video track in screen stream');
+  }
+  console.log('Offscreen: Video track settings:', videoTrack.getSettings());
+  console.log('Offscreen: Video track enabled:', videoTrack.enabled, 'readyState:', videoTrack.readyState);
+  
+  // Get camera if specified
+  if (config.cameraId) {
+    try {
+      console.log('Offscreen: Requesting camera...');
+      cameraStream = await navigator.mediaDevices.getUserMedia({
+        video: { deviceId: { exact: config.cameraId } }
+      });
+      console.log('Offscreen: Got camera stream');
+    } catch (e) {
+      console.warn('Offscreen: Could not get camera:', e);
+    }
+  }
+  
+  // Get microphone if specified
+  if (config.micId) {
+    try {
+      console.log('Offscreen: Requesting microphone...');
+      micStream = await navigator.mediaDevices.getUserMedia({
+        audio: { deviceId: { exact: config.micId } }
+      });
+      console.log('Offscreen: Got microphone stream');
+    } catch (e) {
+      console.warn('Offscreen: Could not get microphone:', e);
+    }
+  }
+  
+  // Use screen stream directly for simplicity first
+  // We can add audio mixing later once basic recording works
+  console.log('Offscreen: Using screen stream directly for recording');
+  const combinedStream = screenStream;
+  
+  console.log('Offscreen: Combined stream tracks:', combinedStream.getTracks().length);
+  combinedStream.getTracks().forEach(t => {
+    console.log('Offscreen: Track:', t.kind, 'enabled:', t.enabled, 'readyState:', t.readyState);
+  });
+  
+  // Start recorder
+  console.log('Offscreen: Starting MediaRecorder...');
+  recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+  
+  recorder.ondataavailable = (event) => {
+    console.log('Offscreen: Data available, size:', event.data.size);
+    if (event.data.size > 0) {
+      data.push(event.data);
+    }
+  };
+  
+  recorder.onstop = async () => {
+    console.log('Offscreen: Recorder stopped, data chunks:', data.length, 'total size:', data.reduce((acc, d) => acc + d.size, 0));
     
-    // Draw screen
-    ctx.drawImage(screenVideo, 0, 0, canvas.width, canvas.height);
-    
-    // Draw camera bubble (circular)
-    if (cameraStream && cameraVideo.readyState >= 2) {
-      ctx.save();
-      ctx.beginPath();
-      ctx.arc(bubbleX + bubbleSize/2, bubbleY + bubbleSize/2, bubbleSize/2, 0, Math.PI * 2);
-      ctx.closePath();
-      ctx.clip();
+    if (data.length > 0) {
+      const blob = new Blob(data, { type: 'video/webm' });
+      console.log('Offscreen: Created blob, size:', blob.size);
       
-      // Draw camera video maintaining aspect ratio
-      const camAspect = cameraVideo.videoWidth / cameraVideo.videoHeight;
-      let drawW = bubbleSize;
-      let drawH = bubbleSize;
-      let drawX = bubbleX;
-      let drawY = bubbleY;
-      
-      if (camAspect > 1) {
-        drawH = bubbleSize;
-        drawW = bubbleSize * camAspect;
-        drawX = bubbleX - (drawW - bubbleSize) / 2;
+      if (blob.size > 0) {
+        // Convert blob to base64 and send to background for download
+        const reader = new FileReader();
+        reader.onloadend = () => {
+          const base64data = reader.result;
+          console.log('Offscreen: Sending blob to background for download, length:', base64data.length);
+          
+          chrome.runtime.sendMessage({
+            action: 'saveRecording',
+            data: base64data,
+            filename: `recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`
+          });
+        };
+        reader.readAsDataURL(blob);
       } else {
-        drawW = bubbleSize;
-        drawH = bubbleSize / camAspect;
-        drawY = bubbleY - (drawH - bubbleSize) / 2;
+        console.log('Offscreen: Blob is empty, not saving');
       }
-      
-      ctx.drawImage(cameraVideo, drawX, drawY, drawW, drawH);
-      ctx.restore();
-      
-      // Draw bubble border
-      ctx.strokeStyle = 'white';
-      ctx.lineWidth = 3;
-      ctx.beginPath();
-      ctx.arc(bubbleX + bubbleSize/2, bubbleY + bubbleSize/2, bubbleSize/2, 0, Math.PI * 2);
-      ctx.stroke();
+    } else {
+      console.log('Offscreen: No data chunks collected');
     }
     
-    animationId = requestAnimationFrame(draw);
-  }
-  draw();
-
-  // Create canvas stream
-  compositeStream = canvas.captureStream(30);
+    cleanup();
+    
+    // Notify background
+    chrome.runtime.sendMessage({ action: 'recordingStopped' });
+  };
   
-  // Mix audio
-  const finalStream = await createStreamWithMixedAudio(
-    new MediaStream([...compositeStream.getVideoTracks(), ...screenStream.getAudioTracks()]),
-    micStream
-  );
+  // Collect data every 100ms for more responsive stopping
+  recorder.start(100);
+  console.log('Offscreen: Recording started, collecting data every 100ms');
   
-  return finalStream;
+  // Handle stream ending (user clicks stop sharing)
+  screenStream.getVideoTracks()[0].onended = () => {
+    console.log('Offscreen: Screen share ended by user');
+    stopRecording();
+  };
+  
+  // Notify background that we're recording
+  chrome.runtime.sendMessage({ action: 'recordingStarted' });
 }
 
-// Stop recording
-async function stopRecording() {
-  console.log('Offscreen: stopRecording called, isRecording:', isRecording);
+function stopRecording() {
+  console.log('Offscreen: stopRecording called, recorder state:', recorder?.state);
   
-  if (!isRecording && !mediaRecorder) {
-    console.log('Offscreen: Not recording, nothing to stop');
-    return { success: true };
-  }
-  
-  isRecording = false;
-  isPaused = false;
-  
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    console.log('Offscreen: Stopping MediaRecorder, state:', mediaRecorder.state);
-    mediaRecorder.stop();
+  if (recorder && recorder.state !== 'inactive') {
+    // Request any pending data before stopping
+    if (recorder.state === 'recording') {
+      console.log('Offscreen: Requesting final data...');
+      recorder.requestData();
+    }
+    
+    // Small delay to ensure data is flushed, then stop
+    setTimeout(() => {
+      if (recorder && recorder.state !== 'inactive') {
+        console.log('Offscreen: Stopping recorder...');
+        recorder.stop();
+      }
+      
+      // Stop all tracks after recorder stops
+      setTimeout(() => {
+        if (screenStream) {
+          screenStream.getTracks().forEach(t => t.stop());
+        }
+      }, 100);
+    }, 100);
   } else {
-    console.log('Offscreen: MediaRecorder already inactive or null');
-    // Still try to cleanup and notify
+    // No active recorder, just cleanup
+    if (screenStream) {
+      screenStream.getTracks().forEach(t => t.stop());
+    }
     cleanup();
     chrome.runtime.sendMessage({ action: 'recordingStopped' });
   }
-  
-  return { success: true };
 }
 
-// Pause recording
-function pauseRecording() {
-  if (!isRecording || isPaused) return { success: false };
-  
-  isPaused = true;
-  if (mediaRecorder && mediaRecorder.state === 'recording') {
-    mediaRecorder.pause();
-  }
-  
-  return { success: true };
-}
-
-// Resume recording
-function resumeRecording() {
-  if (!isRecording || !isPaused) return { success: false };
-  
-  isPaused = false;
-  if (mediaRecorder && mediaRecorder.state === 'paused') {
-    mediaRecorder.resume();
-  }
-  
-  return { success: true };
-}
-
-// Discard recording
-function discardRecording() {
-  recordedChunks = [];
-  
-  if (mediaRecorder && mediaRecorder.state !== 'inactive') {
-    isPaused = true; // Prevent download
-    mediaRecorder.stop();
-  }
-  
-  cleanup();
-  return { success: true };
-}
-
-// Download recording
-function downloadRecording() {
-  if (recordedChunks.length === 0) return;
-  
-  const blob = new Blob(recordedChunks, { type: 'video/webm' });
-  const url = URL.createObjectURL(blob);
-  
-  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const filename = `recording-${timestamp}.webm`;
-  
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.click();
-  
-  setTimeout(() => URL.revokeObjectURL(url), 1000);
-}
-
-// Cleanup streams and resources
 function cleanup() {
-  isRecording = false;
-  
-  if (animationId) {
-    cancelAnimationFrame(animationId);
-    animationId = null;
-  }
+  console.log('Offscreen: Cleaning up...');
   
   if (screenStream) {
-    screenStream.getTracks().forEach(track => track.stop());
+    screenStream.getTracks().forEach(t => t.stop());
     screenStream = null;
   }
   
   if (cameraStream) {
-    cameraStream.getTracks().forEach(track => track.stop());
+    cameraStream.getTracks().forEach(t => t.stop());
     cameraStream = null;
   }
   
   if (micStream) {
-    micStream.getTracks().forEach(track => track.stop());
+    micStream.getTracks().forEach(t => t.stop());
     micStream = null;
   }
   
-  if (audioContext) {
-    audioContext.close();
-    audioContext = null;
-  }
+  recorder = null;
+  data = [];
   
-  if (compositeStream) {
-    compositeStream.getTracks().forEach(track => track.stop());
-    compositeStream = null;
-  }
-  
-  recordedChunks = [];
+  console.log('Offscreen: Cleanup complete');
 }
+
+console.log('Offscreen: Script initialization complete');
