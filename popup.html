@@ -89,6 +89,45 @@
         </select>
       </div>
 
+      <!-- Camera Mode (shown when camera selected) -->
+      <div class="setting-row" id="cameraModeRow" style="display: none;">
+        <div class="setting-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <circle cx="12" cy="10" r="3"></circle>
+            <path d="M7 20.662V19a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v1.662"></path>
+          </svg>
+        </div>
+        <select id="cameraModeSelect" class="setting-select">
+          <option value="live">Live Camera</option>
+          <option value="photo">Use Photo</option>
+        </select>
+      </div>
+
+      <!-- Profile Photo (shown when camera selected) -->
+      <div class="photo-section" id="photoSection" style="display: none;">
+        <div class="photo-header">
+          <span class="photo-label">Profile Photo (fallback)</span>
+        </div>
+        <div class="photo-content">
+          <div class="photo-preview" id="photoPreview">
+            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <circle cx="12" cy="10" r="3"></circle>
+              <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 0 1-6.25-3A6 6 0 0 1 12 14a6 6 0 0 1 6.25 3A8 8 0 0 1 12 20z"></path>
+            </svg>
+          </div>
+          <div class="photo-actions">
+            <label class="photo-upload-btn">
+              <input type="file" id="photoUpload" accept="image/*" hidden>
+              Upload
+            </label>
+            <span class="photo-or">or</span>
+            <input type="text" id="photoUrl" class="photo-url-input" placeholder="Paste image URL">
+          </div>
+          <button id="removePhotoBtn" class="remove-photo-btn hidden">Remove</button>
+        </div>
+      </div>
+
     </div>
 
     <!-- Start Button -->

@@ -401,14 +401,25 @@
     timerEl.textContent = `${min}:${sec}`;
   }
 
-  // Create camera bubble - shows live video if allowed, static placeholder if blocked
+  // Create camera bubble - based on camera mode setting
   async function createCameraBubble() {
     if (!config || !config.cameraId) {
       console.log('Content: No camera ID provided, skipping camera bubble');
       return;
     }
     
-    console.log('Content: Creating camera bubble with device:', config.cameraId);
+    console.log('Content: Creating camera bubble, mode:', config.cameraMode);
+    
+    // If user chose "Use Photo" mode, show photo bubble directly
+    if (config.cameraMode === 'photo') {
+      console.log('Content: Photo mode selected, showing photo bubble');
+      createPhotoBubble();
+      cameraBubbleVisible = true;
+      return;
+    }
+    
+    // Otherwise try live camera
+    console.log('Content: Live mode - trying camera:', config.cameraId);
     
     // Small delay to ensure popup has released the camera
     await new Promise(resolve => setTimeout(resolve, 500));
@@ -432,18 +443,18 @@
       createBubbleElement();
       
     } catch (e) {
-      console.log('Content: Camera access blocked by site, showing static placeholder:', e.message);
+      console.log('Content: Camera access blocked by site:', e.message);
       
-      // Show a static placeholder bubble (like Loom does when camera is blocked)
-      createPlaceholderBubble();
+      // Fallback: Show photo if available, otherwise show placeholder icon
+      createPhotoBubble();
       cameraBubbleVisible = true;
     }
   }
   
-  // Create a static placeholder bubble when camera is blocked by site (like Loom)
-  function createPlaceholderBubble() {
+  // Create photo bubble (either custom photo or default icon placeholder)
+  function createPhotoBubble() {
     cameraBubble = document.createElement('div');
-    cameraBubble.className = 'sr-camera-bubble sr-placeholder';
+    cameraBubble.className = 'sr-camera-bubble sr-photo';
     cameraBubble.id = 'sr-camera-bubble';
     
     cameraBubble.style.cssText = `
@@ -464,18 +475,25 @@
       justify-content: center !important;
     `;
     
-    // Show camera icon as static placeholder (this site blocks camera access)
-    cameraBubble.innerHTML = `
-      <div style="text-align: center; color: white;">
-        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
-          <polygon points="23 7 16 12 23 17 23 7"></polygon>
-          <rect x="1" y="5" width="15" height="14" rx="2" ry="2"></rect>
-        </svg>
-      </div>
-    `;
+    // Show custom photo if available, otherwise show default icon
+    if (config.profilePhoto) {
+      cameraBubble.innerHTML = `
+        <img src="${config.profilePhoto}" style="width: 100% !important; height: 100% !important; object-fit: cover !important; display: block !important;" alt="Profile">
+      `;
+      console.log('Content: Photo bubble added with custom profile photo');
+    } else {
+      cameraBubble.innerHTML = `
+        <div style="text-align: center; color: white;">
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2">
+            <circle cx="12" cy="10" r="3"></circle>
+            <path d="M12 2a10 10 0 1 0 10 10A10 10 0 0 0 12 2zm0 18a8 8 0 0 1-6.25-3A6 6 0 0 1 12 14a6 6 0 0 1 6.25 3A8 8 0 0 1 12 20z"></path>
+          </svg>
+        </div>
+      `;
+      console.log('Content: Photo bubble added with default icon (no custom photo set)');
+    }
     
     document.body.appendChild(cameraBubble);
-    console.log('Content: Static placeholder bubble added (camera blocked by this site)');
     
     setupDraggable(cameraBubble);
   }
