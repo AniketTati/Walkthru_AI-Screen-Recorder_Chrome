@@ -375,7 +375,10 @@ async function startRecording() {
     console.log('Popup: Response from background:', response);
 
     if (response && response.success) {
-      showRecordingState(Date.now());
+      // Don't start timer yet - wait for countdown to finish
+      // The stateUpdate message from background will trigger showRecordingState
+      // with the correct startTime after countdown completes
+      startBtn.textContent = 'Starting...';
     } else {
       const errorMsg = response?.error || 'Failed to start recording';
       console.error('Popup: Recording failed:', errorMsg);
