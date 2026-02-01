@@ -19,7 +19,21 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   
   switch (message.action) {
+    case 'requestPermission':
+      // Request screen permission first (shows picker dialog)
+      requestPermission(message.config)
+        .then(() => {
+          console.log('Offscreen: Permission granted');
+          sendResponse({ success: true });
+        })
+        .catch(err => {
+          console.error('Offscreen: Permission denied:', err);
+          sendResponse({ success: false, error: err.message });
+        });
+      return true;
+      
     case 'startRecording':
+      // Actually start recording (permission already granted)
       startRecording(message.config)
         .then(() => {
           console.log('Offscreen: Recording started successfully');
@@ -69,16 +83,17 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
 });
 
-async function startRecording(config) {
-  console.log('Offscreen: Starting recording with config:', config);
+// Request permission (shows the screen picker dialog)
+async function requestPermission(config) {
+  console.log('Offscreen: Requesting permission...');
   
-  if (recorder?.state === 'recording') {
-    throw new Error('Already recording');
+  // Clean up any existing streams first
+  if (screenStream) {
+    screenStream.getTracks().forEach(t => t.stop());
+    screenStream = null;
   }
   
-  data = [];
-  
-  // Get screen capture
+  // Get screen capture - this shows the permission dialog
   console.log('Offscreen: Requesting display media...');
   try {
     screenStream = await navigator.mediaDevices.getDisplayMedia({
@@ -95,7 +110,7 @@ async function startRecording(config) {
     throw e;
   }
   
-  console.log('Offscreen: Got screen stream');
+  console.log('Offscreen: Permission granted, got screen stream');
   
   // Verify video track
   const videoTrack = screenStream.getVideoTracks()[0];
@@ -128,14 +143,29 @@ async function startRecording(config) {
     }
   }
   
-  // Setup recorder with screen stream + mixed audio
-  await setupRecorder();
-  
-  // Handle screen share ending
+  // Handle screen share ending (user clicks stop in browser)
   videoTrack.onended = () => {
     console.log('Offscreen: Screen share ended by user');
     stopRecording();
   };
+}
+
+// Start recording (permission already granted, streams ready)
+async function startRecording(config) {
+  console.log('Offscreen: Starting recording with config:', config);
+  
+  if (recorder?.state === 'recording') {
+    throw new Error('Already recording');
+  }
+  
+  if (!screenStream) {
+    throw new Error('No screen stream - permission not granted');
+  }
+  
+  data = [];
+  
+  // Setup recorder with screen stream + mixed audio
+  await setupRecorder();
   
   // Notify background that we're recording
   chrome.runtime.sendMessage({ action: 'recordingStarted' });

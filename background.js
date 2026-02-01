@@ -102,15 +102,28 @@ async function startRecording(config) {
     
     state.activeTabId = tab.id;
 
-    // Create offscreen document EARLY (before countdown)
-    console.log('Background: Creating offscreen document early...');
+    // Create offscreen document first
+    console.log('Background: Creating offscreen document...');
     await ensureOffscreenDocument();
     console.log('Background: Offscreen document ready');
+
+    // Request permission FIRST (shows screen picker dialog)
+    console.log('Background: Requesting screen permission...');
+    const permResponse = await chrome.runtime.sendMessage({
+      target: 'offscreen',
+      action: 'requestPermission',
+      config: state.config
+    });
+    console.log('Background: Permission response:', permResponse);
+    
+    if (!permResponse || !permResponse.success) {
+      throw new Error(permResponse?.error || 'Permission denied');
+    }
 
     // Inject content script
     await injectContentScript(tab.id);
 
-    // Start countdown on the page
+    // Now start countdown (permission already granted)
     console.log('Background: Sending showCountdown to tab:', tab.id);
     const response = await chrome.tabs.sendMessage(tab.id, {
       action: 'showCountdown',
@@ -121,6 +134,8 @@ async function startRecording(config) {
     return { success: true };
   } catch (e) {
     console.error('Background: Failed to start recording:', e);
+    // Cleanup on failure
+    await cleanupRecording();
     return { success: false, error: e.message };
   }
 }
@@ -130,20 +145,8 @@ async function onCountdownComplete() {
   console.log('Background: Countdown complete, starting recording...');
   
   try {
-    // Offscreen document should already exist (created in startRecording)
-    // Just verify it exists
-    const existing = await chrome.runtime.getContexts({
-      contextTypes: ['OFFSCREEN_DOCUMENT']
-    });
-    console.log('Background: Offscreen documents found:', existing.length);
-    
-    if (existing.length === 0) {
-      console.log('Background: Offscreen not found, creating...');
-      await ensureOffscreenDocument();
-      await new Promise(resolve => setTimeout(resolve, 300));
-    }
-
-    // Start recording in offscreen
+    // Offscreen document and permission should already be ready
+    // Just start the actual recording
     console.log('Background: Sending startRecording to offscreen...');
     const response = await chrome.runtime.sendMessage({
       target: 'offscreen',
