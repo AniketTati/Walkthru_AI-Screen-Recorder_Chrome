@@ -259,6 +259,120 @@ body {
   text-align: center;
 }
 
+/* Photo Section */
+.photo-section {
+  background: var(--bg-secondary);
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+  padding: 12px;
+}
+
+.photo-header {
+  margin-bottom: 10px;
+}
+
+.photo-label {
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--text-secondary);
+}
+
+.photo-content {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.photo-preview {
+  width: 48px;
+  height: 48px;
+  border-radius: 50%;
+  background: var(--bg-tertiary);
+  border: 2px solid var(--border-color);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  flex-shrink: 0;
+  color: var(--text-muted);
+}
+
+.photo-preview img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.photo-preview.has-photo {
+  border-color: var(--accent);
+}
+
+.photo-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 1;
+}
+
+.photo-upload-btn {
+  padding: 6px 12px;
+  background: var(--bg-primary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-primary);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.photo-upload-btn:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.photo-or {
+  font-size: 12px;
+  color: var(--text-muted);
+}
+
+.photo-url-input {
+  flex: 1;
+  min-width: 100px;
+  padding: 6px 10px;
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  font-size: 12px;
+  background: var(--bg-primary);
+  color: var(--text-primary);
+}
+
+.photo-url-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.photo-url-input::placeholder {
+  color: var(--text-muted);
+}
+
+.remove-photo-btn {
+  padding: 4px 10px;
+  background: transparent;
+  border: 1px solid #FFDDDD;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 500;
+  color: #D32F2F;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.remove-photo-btn:hover {
+  background: #FFF5F5;
+}
+
 /* Utilities */
 .hidden {
   display: none !important;
