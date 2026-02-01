@@ -122,24 +122,91 @@ async function startRecording(config) {
   // Get microphone if specified
   if (config.micId) {
     try {
-      console.log('Offscreen: Requesting microphone...');
+      console.log('Offscreen: Requesting microphone with ID:', config.micId);
       micStream = await navigator.mediaDevices.getUserMedia({
-        audio: { deviceId: { exact: config.micId } }
+        audio: { 
+          deviceId: { exact: config.micId },
+          echoCancellation: true,
+          noiseSuppression: true
+        }
       });
-      console.log('Offscreen: Got microphone stream');
+      console.log('Offscreen: Got microphone stream, tracks:', micStream.getAudioTracks().length);
     } catch (e) {
-      console.warn('Offscreen: Could not get microphone:', e);
+      console.warn('Offscreen: Could not get exact microphone, trying any microphone:', e);
+      try {
+        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        console.log('Offscreen: Got fallback microphone stream');
+      } catch (e2) {
+        console.warn('Offscreen: Could not get any microphone:', e2);
+      }
     }
   }
   
-  // Use screen stream directly for simplicity first
-  // We can add audio mixing later once basic recording works
-  console.log('Offscreen: Using screen stream directly for recording');
-  const combinedStream = screenStream;
+  // Combine video and audio tracks
+  console.log('Offscreen: Combining tracks...');
+  const tracks = [];
   
-  console.log('Offscreen: Combined stream tracks:', combinedStream.getTracks().length);
+  // Add video track from screen (videoTrack already declared above)
+  if (videoTrack) {
+    tracks.push(videoTrack);
+    console.log('Offscreen: Added video track');
+  }
+  
+  // Collect all audio sources
+  const audioSources = [];
+  
+  // System audio from screen capture
+  const systemAudioTracks = screenStream.getAudioTracks();
+  console.log('Offscreen: System audio tracks:', systemAudioTracks.length);
+  if (systemAudioTracks.length > 0) {
+    audioSources.push(...systemAudioTracks);
+  }
+  
+  // Microphone audio
+  if (micStream) {
+    const micTracks = micStream.getAudioTracks();
+    console.log('Offscreen: Microphone tracks:', micTracks.length);
+    if (micTracks.length > 0) {
+      audioSources.push(...micTracks);
+    }
+  }
+  
+  // Mix audio if we have multiple sources, otherwise just add the single source
+  if (audioSources.length > 0) {
+    if (audioSources.length === 1) {
+      tracks.push(audioSources[0]);
+      console.log('Offscreen: Added single audio track');
+    } else {
+      // Mix multiple audio tracks using AudioContext
+      console.log('Offscreen: Mixing', audioSources.length, 'audio sources');
+      try {
+        const audioContext = new AudioContext();
+        const destination = audioContext.createMediaStreamDestination();
+        
+        audioSources.forEach((track, index) => {
+          const source = audioContext.createMediaStreamSource(new MediaStream([track]));
+          source.connect(destination);
+          console.log('Offscreen: Connected audio source', index);
+        });
+        
+        const mixedTrack = destination.stream.getAudioTracks()[0];
+        if (mixedTrack) {
+          tracks.push(mixedTrack);
+          console.log('Offscreen: Added mixed audio track');
+        }
+      } catch (e) {
+        console.error('Offscreen: Audio mixing failed, using first source:', e);
+        tracks.push(audioSources[0]);
+      }
+    }
+  } else {
+    console.log('Offscreen: No audio sources available');
+  }
+  
+  const combinedStream = new MediaStream(tracks);
+  console.log('Offscreen: Combined stream has', combinedStream.getTracks().length, 'tracks');
   combinedStream.getTracks().forEach(t => {
-    console.log('Offscreen: Track:', t.kind, 'enabled:', t.enabled, 'readyState:', t.readyState);
+    console.log('Offscreen: Final track:', t.kind, 'enabled:', t.enabled, 'readyState:', t.readyState);
   });
   
   // Start recorder
