@@ -235,8 +235,27 @@ async function setupRecorder() {
   const combinedStream = new MediaStream(tracks);
   console.log('Offscreen: Combined stream has', combinedStream.getTracks().length, 'tracks');
   
-  // Create recorder
-  recorder = new MediaRecorder(combinedStream, { mimeType: 'video/webm' });
+  // Determine best codec and settings for high quality
+  let mimeType = 'video/webm';
+  
+  // Try VP9 first (better quality), then VP8, then default
+  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
+    mimeType = 'video/webm;codecs=vp9,opus';
+  } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
+    mimeType = 'video/webm;codecs=vp9';
+  } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+    mimeType = 'video/webm;codecs=vp8,opus';
+  }
+  
+  console.log('Offscreen: Using codec:', mimeType);
+  
+  // Create recorder with high quality settings
+  // 8 Mbps video bitrate for crisp quality, 128kbps audio
+  recorder = new MediaRecorder(combinedStream, { 
+    mimeType: mimeType,
+    videoBitsPerSecond: 8000000,  // 8 Mbps - high quality
+    audioBitsPerSecond: 128000   // 128 kbps audio
+  });
   
   recorder.ondataavailable = (event) => {
     if (event.data.size > 0) {
