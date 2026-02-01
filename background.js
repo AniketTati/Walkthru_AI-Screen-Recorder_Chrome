@@ -69,6 +69,12 @@ async function handleMessage(message, sender) {
       await cleanupRecording();
       return { success: true };
 
+    case 'downloadRecording':
+      return await downloadRecording(message.dataUrl, message.filename);
+
+    case 'saveRecording':
+      return await saveRecording(message.data, message.filename);
+
     default:
       return { error: 'Unknown action' };
   }
@@ -96,6 +102,11 @@ async function startRecording(config) {
     
     state.activeTabId = tab.id;
 
+    // Create offscreen document EARLY (before countdown)
+    console.log('Background: Creating offscreen document early...');
+    await ensureOffscreenDocument();
+    console.log('Background: Offscreen document ready');
+
     // Inject content script
     await injectContentScript(tab.id);
 
@@ -119,13 +130,18 @@ async function onCountdownComplete() {
   console.log('Background: Countdown complete, starting recording...');
   
   try {
-    // Create offscreen document
-    console.log('Background: Ensuring offscreen document...');
-    await ensureOffscreenDocument();
-    console.log('Background: Offscreen document ready');
-
-    // Small delay to ensure offscreen is ready
-    await new Promise(resolve => setTimeout(resolve, 200));
+    // Offscreen document should already exist (created in startRecording)
+    // Just verify it exists
+    const existing = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT']
+    });
+    console.log('Background: Offscreen documents found:', existing.length);
+    
+    if (existing.length === 0) {
+      console.log('Background: Offscreen not found, creating...');
+      await ensureOffscreenDocument();
+      await new Promise(resolve => setTimeout(resolve, 300));
+    }
 
     // Start recording in offscreen
     console.log('Background: Sending startRecording to offscreen...');
@@ -376,23 +392,38 @@ async function injectContentScript(tabId) {
   }
 }
 
-// Ensure offscreen document exists
+// Ensure offscreen document exists - following official Chrome pattern
+let creatingOffscreen = null; // Global promise to avoid concurrency issues
+
 async function ensureOffscreenDocument() {
   console.log('Background: Checking for existing offscreen document...');
   
+  const offscreenUrl = chrome.runtime.getURL('offscreen.html');
   const existing = await chrome.runtime.getContexts({
-    contextTypes: ['OFFSCREEN_DOCUMENT']
+    contextTypes: ['OFFSCREEN_DOCUMENT'],
+    documentUrls: [offscreenUrl]
   });
   
   console.log('Background: Existing offscreen documents:', existing.length);
 
-  if (existing.length === 0) {
+  if (existing.length > 0) {
+    console.log('Background: Offscreen document already exists');
+    return;
+  }
+
+  // Create offscreen document with concurrency handling
+  if (creatingOffscreen) {
+    console.log('Background: Waiting for ongoing creation...');
+    await creatingOffscreen;
+  } else {
     console.log('Background: Creating offscreen document...');
-    await chrome.offscreen.createDocument({
+    creatingOffscreen = chrome.offscreen.createDocument({
       url: 'offscreen.html',
-      reasons: ['USER_MEDIA', 'DISPLAY_MEDIA'],
-      justification: 'Recording screen, camera, and audio'
+      reasons: ['USER_MEDIA', 'DISPLAY_MEDIA', 'BLOBS'],
+      justification: 'Recording screen with getDisplayMedia, camera with getUserMedia, and creating blob URLs for download'
     });
+    await creatingOffscreen;
+    creatingOffscreen = null;
     console.log('Background: Offscreen document created');
   }
 }
@@ -403,5 +434,44 @@ async function notifyPopup(action, data) {
     await chrome.runtime.sendMessage({ action, ...data });
   } catch (e) {
     // Popup might be closed
+  }
+}
+
+// Download recording using chrome.downloads API
+async function downloadRecording(dataUrl, filename) {
+  console.log('Background: Downloading recording:', filename);
+  
+  try {
+    const downloadId = await chrome.downloads.download({
+      url: dataUrl,
+      filename: filename,
+      saveAs: false
+    });
+    
+    console.log('Background: Download started, id:', downloadId);
+    return { success: true, downloadId };
+  } catch (e) {
+    console.error('Background: Download failed:', e);
+    return { success: false, error: e.message };
+  }
+}
+
+// Save recording - receives base64 data from offscreen
+async function saveRecording(base64data, filename) {
+  console.log('Background: Saving recording:', filename, 'data length:', base64data?.length);
+  
+  try {
+    // Use chrome.downloads.download with the data URL
+    const downloadId = await chrome.downloads.download({
+      url: base64data,
+      filename: filename,
+      saveAs: true  // Let user choose where to save
+    });
+    
+    console.log('Background: Download initiated, id:', downloadId);
+    return { success: true, downloadId };
+  } catch (e) {
+    console.error('Background: Save failed:', e);
+    return { success: false, error: e.message };
   }
 }
