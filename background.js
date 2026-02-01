@@ -1,5 +1,4 @@
 // Screen Recorder Background Service Worker
-// Central coordinator and state manager
 
 // Recording state
 let state = {
@@ -13,13 +12,11 @@ let state = {
 
 // Message handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
-  // Ignore messages meant for offscreen document
   if (message.target === 'offscreen') {
     return false;
   }
-  
   handleMessage(message, sender).then(sendResponse);
-  return true; // Keep channel open for async response
+  return true;
 });
 
 async function handleMessage(message, sender) {
@@ -72,9 +69,6 @@ async function handleMessage(message, sender) {
       await cleanupRecording();
       return { success: true };
 
-    case 'downloadRecording':
-      return await downloadRecording(message.dataUrl, message.filename);
-
     case 'saveRecording':
       return await saveRecording(message.data, message.filename);
 
@@ -85,43 +79,33 @@ async function handleMessage(message, sender) {
 
 // Capture screenshot
 async function captureScreenshot(config) {
-  console.log('Background: Capturing screenshot with config:', config);
-  
   try {
     const source = config.source || 'tab';
     
     if (source === 'tab') {
-      // Use chrome.tabs.captureVisibleTab for current tab
       const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
       
       if (!tab) {
         return { success: false, error: 'No active tab found' };
       }
       
-      // Check if it's a valid URL
       if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
         return { success: false, error: 'Cannot capture screenshot on this page. Please navigate to a regular website.' };
       }
       
-      // Capture the visible tab
       const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
-      
-      // Generate filename with timestamp
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
       const filename = `screenshot-${timestamp}.png`;
       
-      // Download the screenshot
       const downloadId = await chrome.downloads.download({
         url: dataUrl,
         filename: filename,
         saveAs: true
       });
       
-      console.log('Background: Screenshot download started, id:', downloadId);
       return { success: true, downloadId };
       
     } else {
-      // For screen or window capture, use offscreen document with getDisplayMedia
       await ensureOffscreenDocument();
       
       const response = await chrome.runtime.sendMessage({
@@ -137,66 +121,48 @@ async function captureScreenshot(config) {
       return { success: true };
     }
   } catch (e) {
-    console.error('Background: Screenshot capture failed:', e);
     return { success: false, error: e.message };
   }
 }
 
 // Start recording flow
 async function startRecording(config) {
-  console.log('Background: Starting recording with config:', config);
-  
   try {
     state.config = config;
     
-    // Get active tab
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    console.log('Background: Active tab:', tab);
     
     if (!tab) {
       return { success: false, error: 'No active tab found' };
     }
     
-    // Check if it's a valid URL (not chrome://, about:, etc.)
     if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
       return { success: false, error: 'Cannot record on this page. Please navigate to a regular website.' };
     }
     
     state.activeTabId = tab.id;
 
-    // Create offscreen document first
-    console.log('Background: Creating offscreen document...');
     await ensureOffscreenDocument();
-    console.log('Background: Offscreen document ready');
 
-    // Request permission FIRST (shows screen picker dialog)
-    console.log('Background: Requesting screen permission...');
     const permResponse = await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'requestPermission',
       config: state.config
     });
-    console.log('Background: Permission response:', permResponse);
     
     if (!permResponse || !permResponse.success) {
       throw new Error(permResponse?.error || 'Permission denied');
     }
 
-    // Inject content script
     await injectContentScript(tab.id);
 
-    // Now start countdown (permission already granted)
-    console.log('Background: Sending showCountdown to tab:', tab.id);
-    const response = await chrome.tabs.sendMessage(tab.id, {
+    await chrome.tabs.sendMessage(tab.id, {
       action: 'showCountdown',
       config: state.config
     });
-    console.log('Background: showCountdown response:', response);
 
     return { success: true };
   } catch (e) {
-    console.error('Background: Failed to start recording:', e);
-    // Cleanup on failure
     await cleanupRecording();
     return { success: false, error: e.message };
   }
@@ -204,34 +170,24 @@ async function startRecording(config) {
 
 // Countdown complete - actually start recording
 async function onCountdownComplete() {
-  console.log('Background: Countdown complete, starting recording...');
-  
   try {
-    // Offscreen document and permission should already be ready
-    // Just start the actual recording
-    console.log('Background: Sending startRecording to offscreen...');
     const response = await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'startRecording',
       config: state.config
     });
-    console.log('Background: Offscreen response:', response);
 
     if (!response || !response.success) {
       throw new Error(response?.error || 'Failed to start recording in offscreen');
     }
 
-    // Show floating controls
-    console.log('Background: Showing floating controls...');
     await chrome.tabs.sendMessage(state.activeTabId, {
       action: 'showFloatingControls',
       config: state.config
     });
-    console.log('Background: Floating controls shown');
 
     return { success: true };
   } catch (e) {
-    console.error('Background: Failed to start recording after countdown:', e);
     await cleanupRecording();
     return { success: false, error: e.message };
   }
@@ -246,21 +202,13 @@ async function onCountdownCancelled() {
 // Stop recording
 async function stopRecording() {
   try {
-    console.log('Background: Stopping recording...');
-    
-    // Tell offscreen to stop and download
     const response = await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'stopRecording'
     });
-    
-    console.log('Background: Offscreen response:', response);
 
-    // Cleanup will be called when offscreen confirms stop
     return { success: true };
   } catch (e) {
-    console.error('Failed to stop recording:', e);
-    // Try to cleanup anyway
     await cleanupRecording();
     return { success: false, error: e.message };
   }
@@ -277,7 +225,6 @@ async function pauseRecording() {
       action: 'pauseRecording'
     });
 
-    // Update floating controls
     if (state.activeTabId) {
       await chrome.tabs.sendMessage(state.activeTabId, {
         action: 'updateControls',
@@ -287,7 +234,6 @@ async function pauseRecording() {
 
     return { success: true };
   } catch (e) {
-    console.error('Failed to pause recording:', e);
     return { success: false, error: e.message };
   }
 }
@@ -302,7 +248,6 @@ async function resumeRecording() {
       action: 'resumeRecording'
     });
 
-    // Update floating controls
     if (state.activeTabId) {
       await chrome.tabs.sendMessage(state.activeTabId, {
         action: 'updateControls',
@@ -312,7 +257,6 @@ async function resumeRecording() {
 
     return { success: true };
   } catch (e) {
-    console.error('Failed to resume recording:', e);
     return { success: false, error: e.message };
   }
 }
@@ -320,19 +264,16 @@ async function resumeRecording() {
 // Reset recording (discard and start fresh)
 async function resetRecording() {
   try {
-    // Tell offscreen to discard
     await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'discardRecording'
     });
 
-    // Reset state
     state.isRecording = false;
     state.isPaused = false;
     state.startTime = null;
     state.pausedTime = 0;
 
-    // Show countdown again
     if (state.activeTabId) {
       await chrome.tabs.sendMessage(state.activeTabId, {
         action: 'showCountdown',
@@ -342,7 +283,6 @@ async function resetRecording() {
 
     return { success: true };
   } catch (e) {
-    console.error('Failed to reset recording:', e);
     return { success: false, error: e.message };
   }
 }
@@ -350,7 +290,6 @@ async function resetRecording() {
 // Delete recording (discard without download)
 async function deleteRecording() {
   try {
-    // Tell offscreen to discard
     await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'discardRecording'
@@ -359,7 +298,6 @@ async function deleteRecording() {
     await cleanupRecording();
     return { success: true };
   } catch (e) {
-    console.error('Failed to delete recording:', e);
     return { success: false, error: e.message };
   }
 }
@@ -380,7 +318,6 @@ async function toggleCameraBubble() {
 
 // Cleanup after recording ends
 async function cleanupRecording() {
-  // Remove floating controls
   if (state.activeTabId) {
     try {
       await chrome.tabs.sendMessage(state.activeTabId, {
@@ -391,97 +328,71 @@ async function cleanupRecording() {
     }
   }
 
-  // Close offscreen document
   try {
     await chrome.offscreen.closeDocument();
   } catch (e) {
     // Might not exist
   }
 
-  // Reset state
   state.isRecording = false;
   state.isPaused = false;
   state.startTime = null;
   state.pausedTime = 0;
   state.activeTabId = null;
 
-  // Notify popup
   await notifyPopup('stateUpdate', { state: 'stopped' });
 }
 
 // Inject content script into tab
 async function injectContentScript(tabId) {
-  console.log('Background: Injecting content script into tab:', tabId);
-  
   try {
-    // Check if already injected
     try {
       const response = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-      console.log('Background: Content script already injected, response:', response);
       return; // Already injected
     } catch (e) {
-      console.log('Background: Content script not yet injected, proceeding...');
+      // Not yet injected, proceed
     }
 
-    // Inject CSS first
-    console.log('Background: Injecting CSS...');
     await chrome.scripting.insertCSS({
       target: { tabId: tabId },
       files: ['content.css']
     });
-    console.log('Background: CSS injected successfully');
 
-    // Inject JS
-    console.log('Background: Injecting JS...');
     await chrome.scripting.executeScript({
       target: { tabId: tabId },
       files: ['content.js']
     });
-    console.log('Background: JS injected successfully');
     
-    // Wait a moment for script to initialize
     await new Promise(resolve => setTimeout(resolve, 100));
     
-    // Verify injection
     try {
-      const verifyResponse = await chrome.tabs.sendMessage(tabId, { action: 'ping' });
-      console.log('Background: Content script verified:', verifyResponse);
+      await chrome.tabs.sendMessage(tabId, { action: 'ping' });
     } catch (e) {
-      console.error('Background: Content script injection verification failed:', e);
       throw new Error('Content script failed to initialize');
     }
     
   } catch (e) {
-    console.error('Background: Failed to inject content script:', e);
     throw e;
   }
 }
 
-// Ensure offscreen document exists - following official Chrome pattern
-let creatingOffscreen = null; // Global promise to avoid concurrency issues
+// Ensure offscreen document exists
+let creatingOffscreen = null;
 
 async function ensureOffscreenDocument() {
-  console.log('Background: Checking for existing offscreen document...');
-  
   const offscreenUrl = chrome.runtime.getURL('offscreen.html');
   const existing = await chrome.runtime.getContexts({
     contextTypes: ['OFFSCREEN_DOCUMENT'],
     documentUrls: [offscreenUrl]
   });
-  
-  console.log('Background: Existing offscreen documents:', existing.length);
 
   if (existing.length > 0) {
-    console.log('Background: Offscreen document already exists');
     return;
   }
 
-  // Create offscreen document with concurrency handling
   if (creatingOffscreen) {
-    console.log('Background: Waiting for ongoing creation...');
     await creatingOffscreen;
   } else {
-    console.log('Background: Creating offscreen document...');
     creatingOffscreen = chrome.offscreen.createDocument({
       url: 'offscreen.html',
       reasons: ['USER_MEDIA', 'DISPLAY_MEDIA', 'BLOBS'],
@@ -489,7 +400,6 @@ async function ensureOffscreenDocument() {
     });
     await creatingOffscreen;
     creatingOffscreen = null;
-    console.log('Background: Offscreen document created');
   }
 }
 
@@ -502,41 +412,17 @@ async function notifyPopup(action, data) {
   }
 }
 
-// Download recording using chrome.downloads API
-async function downloadRecording(dataUrl, filename) {
-  console.log('Background: Downloading recording:', filename);
-  
-  try {
-    const downloadId = await chrome.downloads.download({
-      url: dataUrl,
-      filename: filename,
-      saveAs: false
-    });
-    
-    console.log('Background: Download started, id:', downloadId);
-    return { success: true, downloadId };
-  } catch (e) {
-    console.error('Background: Download failed:', e);
-    return { success: false, error: e.message };
-  }
-}
-
-// Save recording - receives base64 data from offscreen
+// Save recording using chrome.downloads API
 async function saveRecording(base64data, filename) {
-  console.log('Background: Saving recording:', filename, 'data length:', base64data?.length);
-  
   try {
-    // Use chrome.downloads.download with the data URL
     const downloadId = await chrome.downloads.download({
       url: base64data,
       filename: filename,
-      saveAs: true  // Let user choose where to save
+      saveAs: true
     });
     
-    console.log('Background: Download initiated, id:', downloadId);
     return { success: true, downloadId };
   } catch (e) {
-    console.error('Background: Save failed:', e);
     return { success: false, error: e.message };
   }
 }

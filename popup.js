@@ -24,8 +24,8 @@ const errorMsg = document.getElementById('errorMsg');
 // State
 let previewStream = null;
 let timerInterval = null;
-let profilePhotoData = null; // Base64 photo data
-let currentMode = 'video'; // 'video' or 'photo'
+let profilePhotoData = null;
+let currentMode = 'video';
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
@@ -50,18 +50,14 @@ async function checkRecordingState() {
 // Enumerate available devices
 async function enumerateDevices() {
   try {
-    // Request permission to enumerate devices
     await navigator.mediaDevices.getUserMedia({ audio: true, video: true })
       .then(stream => {
         stream.getTracks().forEach(track => track.stop());
       })
-      .catch(() => {
-        // Permission denied, will show empty lists
-      });
+      .catch(() => {});
 
     const devices = await navigator.mediaDevices.enumerateDevices();
     
-    // Populate camera dropdown
     const cameras = devices.filter(d => d.kind === 'videoinput');
     cameraSelect.innerHTML = '<option value="">No Camera</option>';
     cameras.forEach(camera => {
@@ -71,7 +67,6 @@ async function enumerateDevices() {
       cameraSelect.appendChild(option);
     });
 
-    // Populate microphone dropdown
     const mics = devices.filter(d => d.kind === 'audioinput');
     micSelect.innerHTML = '<option value="">No Microphone</option>';
     mics.forEach(mic => {
@@ -82,7 +77,7 @@ async function enumerateDevices() {
     });
 
   } catch (e) {
-    console.error('Failed to enumerate devices:', e);
+    // Failed to enumerate devices
   }
 }
 
@@ -109,10 +104,9 @@ async function loadSavedPreferences() {
       updatePhotoPreview();
     }
     
-    // Show/hide camera options based on camera selection
     updateCameraOptionsVisibility();
   } catch (e) {
-    console.error('Failed to load preferences:', e);
+    // Failed to load preferences
   }
 }
 
@@ -127,11 +121,11 @@ async function savePreferences() {
       profilePhoto: profilePhotoData
     });
   } catch (e) {
-    console.error('Failed to save preferences:', e);
+    // Failed to save preferences
   }
 }
 
-// Update camera options visibility (mode selector and photo section)
+// Update camera options visibility
 function updateCameraOptionsVisibility() {
   if (currentMode === 'video' && cameraSelect.value) {
     cameraModeRow.style.display = 'flex';
@@ -142,10 +136,9 @@ function updateCameraOptionsVisibility() {
   }
 }
 
-// Update UI based on current mode (video or photo)
+// Update UI based on current mode
 function updateModeUI() {
   if (currentMode === 'photo') {
-    // Photo/Screenshot mode - hide video-specific options
     previewSection.style.display = 'none';
     cameraRow.style.display = 'none';
     micRow.style.display = 'none';
@@ -153,14 +146,12 @@ function updateModeUI() {
     photoSection.style.display = 'none';
     startBtn.textContent = 'Take Screenshot';
     
-    // Stop camera preview if running
     if (previewStream) {
       previewStream.getTracks().forEach(track => track.stop());
       previewStream = null;
       cameraPreview.srcObject = null;
     }
   } else {
-    // Video mode - show all options
     previewSection.style.display = 'block';
     cameraRow.style.display = 'flex';
     micRow.style.display = 'flex';
@@ -194,7 +185,6 @@ function handlePhotoUpload(file) {
     return;
   }
   
-  // Limit file size (2MB)
   if (file.size > 2 * 1024 * 1024) {
     showError('Image too large. Max 2MB.');
     return;
@@ -202,7 +192,6 @@ function handlePhotoUpload(file) {
   
   const reader = new FileReader();
   reader.onload = (e) => {
-    // Resize image to reasonable size
     resizeImage(e.target.result, 200, (resizedData) => {
       profilePhotoData = resizedData;
       updatePhotoPreview();
@@ -217,7 +206,6 @@ async function handlePhotoUrl(url) {
   if (!url) return;
   
   try {
-    // Fetch and convert to base64
     const response = await fetch(url);
     if (!response.ok) throw new Error('Failed to fetch image');
     
@@ -232,7 +220,7 @@ async function handlePhotoUrl(url) {
         profilePhotoData = resizedData;
         updatePhotoPreview();
         savePreferences();
-        photoUrl.value = ''; // Clear input
+        photoUrl.value = '';
       });
     };
     reader.readAsDataURL(blob);
@@ -241,7 +229,7 @@ async function handlePhotoUrl(url) {
   }
 }
 
-// Resize image to max dimension
+// Resize image
 function resizeImage(dataUrl, maxSize, callback) {
   const img = new Image();
   img.onload = () => {
@@ -249,7 +237,6 @@ function resizeImage(dataUrl, maxSize, callback) {
     let width = img.width;
     let height = img.height;
     
-    // Scale down if needed
     if (width > maxSize || height > maxSize) {
       if (width > height) {
         height = Math.round((height * maxSize) / width);
@@ -278,7 +265,6 @@ function removePhoto() {
 
 // Setup event listeners
 function setupEventListeners() {
-  // Mode toggle (Video/Photo)
   document.querySelectorAll('.mode-btn').forEach(btn => {
     btn.addEventListener('click', () => {
       document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
@@ -288,28 +274,22 @@ function setupEventListeners() {
     });
   });
 
-  // Camera selection change
   cameraSelect.addEventListener('change', async () => {
     await savePreferences();
     await updateCameraPreview();
     updateCameraOptionsVisibility();
   });
 
-  // Camera mode change
   cameraModeSelect.addEventListener('change', savePreferences);
-
-  // Source and mic changes
   sourceSelect.addEventListener('change', savePreferences);
   micSelect.addEventListener('change', savePreferences);
 
-  // Photo upload
   photoUpload.addEventListener('change', (e) => {
     if (e.target.files && e.target.files[0]) {
       handlePhotoUpload(e.target.files[0]);
     }
   });
 
-  // Photo URL input (on blur or Enter)
   photoUrl.addEventListener('blur', () => {
     if (photoUrl.value.trim()) {
       handlePhotoUrl(photoUrl.value.trim());
@@ -321,10 +301,8 @@ function setupEventListeners() {
     }
   });
 
-  // Remove photo
   removePhotoBtn.addEventListener('click', removePhoto);
 
-  // Start recording or take screenshot
   startBtn.addEventListener('click', () => {
     if (currentMode === 'photo') {
       takeScreenshot();
@@ -333,10 +311,8 @@ function setupEventListeners() {
     }
   });
 
-  // Listen for device changes
   navigator.mediaDevices.addEventListener('devicechange', enumerateDevices);
 
-  // Listen for state updates from background
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     if (message.action === 'stateUpdate') {
       if (message.state === 'recording') {
@@ -350,7 +326,6 @@ function setupEventListeners() {
 
 // Update camera preview
 async function updateCameraPreview() {
-  // Stop existing preview
   if (previewStream) {
     previewStream.getTracks().forEach(track => track.stop());
     previewStream = null;
@@ -372,7 +347,6 @@ async function updateCameraPreview() {
     cameraPreview.classList.add('active');
     previewPlaceholder.classList.add('hidden');
   } catch (e) {
-    console.error('Failed to start camera preview:', e);
     cameraPreview.classList.remove('active');
     previewPlaceholder.classList.remove('hidden');
     showError('Failed to access camera');
@@ -385,7 +359,6 @@ async function startRecording() {
   startBtn.disabled = true;
   startBtn.textContent = 'Starting...';
 
-  // Stop camera preview to release the camera for recording
   if (previewStream) {
     previewStream.getTracks().forEach(track => track.stop());
     previewStream = null;
@@ -398,35 +371,25 @@ async function startRecording() {
     source: sourceSelect.value,
     cameraId: cameraSelect.value || null,
     micId: micSelect.value || null,
-    cameraMode: cameraModeSelect.value, // 'live' or 'photo'
+    cameraMode: cameraModeSelect.value,
     profilePhoto: profilePhotoData || null
   };
 
   try {
-    console.log('Popup: Sending startRecording message with config:', config);
-    
-    // Send start message to background
     const response = await chrome.runtime.sendMessage({
       action: 'startRecording',
       config
     });
-    
-    console.log('Popup: Response from background:', response);
 
     if (response && response.success) {
-      // Don't start timer yet - wait for countdown to finish
-      // The stateUpdate message from background will trigger showRecordingState
-      // with the correct startTime after countdown completes
       startBtn.textContent = 'Starting...';
     } else {
-      const errorMsg = response?.error || 'Failed to start recording';
-      console.error('Popup: Recording failed:', errorMsg);
-      showError(errorMsg);
+      const errorMessage = response?.error || 'Failed to start recording';
+      showError(errorMessage);
       startBtn.disabled = false;
       startBtn.textContent = 'Start Recording';
     }
   } catch (e) {
-    console.error('Popup: Error starting recording:', e);
     showError(e.message || 'Failed to start recording');
     startBtn.disabled = false;
     startBtn.textContent = 'Start Recording';
@@ -442,14 +405,10 @@ async function takeScreenshot() {
   const source = sourceSelect.value;
 
   try {
-    console.log('Popup: Taking screenshot, source:', source);
-    
     const response = await chrome.runtime.sendMessage({
       action: 'captureScreenshot',
       config: { source }
     });
-    
-    console.log('Popup: Screenshot response:', response);
 
     if (response && response.success) {
       startBtn.textContent = 'Screenshot Saved!';
@@ -459,13 +418,11 @@ async function takeScreenshot() {
       }, 1500);
     } else {
       const errorMessage = response?.error || 'Failed to capture screenshot';
-      console.error('Popup: Screenshot failed:', errorMessage);
       showError(errorMessage);
       startBtn.disabled = false;
       startBtn.textContent = 'Take Screenshot';
     }
   } catch (e) {
-    console.error('Popup: Error taking screenshot:', e);
     showError(e.message || 'Failed to capture screenshot');
     startBtn.disabled = false;
     startBtn.textContent = 'Take Screenshot';
@@ -477,7 +434,6 @@ function showRecordingState(startTime) {
   startBtn.classList.add('hidden');
   recordingStatus.classList.remove('hidden');
   
-  // Start timer
   if (timerInterval) clearInterval(timerInterval);
   
   const updateTimer = () => {
