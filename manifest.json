@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "Screen Recorder",
   "version": "2.0.0",
-  "description": "Loom-style screen recorder with camera overlay, pause/resume, and floating controls",
+  "description": "screen recorder with camera overlay, pause/resume, and floating controls",
   "permissions": [
     "activeTab",
     "desktopCapture",

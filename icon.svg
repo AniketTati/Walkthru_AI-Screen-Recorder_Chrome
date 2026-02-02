@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <!-- Dashed outer circle -->
+  <circle 
+    cx="64" 
+    cy="64" 
+    r="56" 
+    fill="none" 
+    stroke="#F05A3C" 
+    stroke-width="8" 
+    stroke-dasharray="20 15.19"
+    stroke-linecap="round"
+  />
+  
+  <!-- Main dark circle background -->
+  <circle 
+    cx="64" 
+    cy="64" 
+    r="44" 
+    fill="#3D5A73"
+  />
+  
+  <!-- Play button triangle -->
+  <polygon 
+    points="52,40 52,88 92,64" 
+    fill="#F05A3C"
+  />
+</svg>
