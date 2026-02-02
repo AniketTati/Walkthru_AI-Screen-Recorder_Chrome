@@ -7,8 +7,60 @@ let state = {
   startTime: null,
   pausedTime: 0,
   activeTabId: null,
-  config: null
+  config: null,
+  injectedTabs: new Set() // Track all tabs with injected controls
 };
+
+// Update badge to show recording status
+function updateBadge(isRecording, isPaused) {
+  if (isRecording) {
+    chrome.action.setBadgeText({ text: isPaused ? '⏸' : 'REC' });
+    chrome.action.setBadgeBackgroundColor({ color: isPaused ? '#ffa500' : '#ff4757' });
+  } else {
+    chrome.action.setBadgeText({ text: '' });
+  }
+}
+
+// Listen for tab activation to re-inject controls when switching tabs during full-screen recording
+chrome.tabs.onActivated.addListener(async (activeInfo) => {
+  if (!state.isRecording || state.config?.source === 'tab') {
+    return; // Only handle full-screen/window recording
+  }
+  
+  try {
+    const tab = await chrome.tabs.get(activeInfo.tabId);
+    
+    // Skip chrome:// and other restricted URLs
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      return;
+    }
+    
+    // Inject controls into the new active tab
+    await injectControlsIntoTab(activeInfo.tabId);
+  } catch (e) {
+    // Tab might be invalid
+  }
+});
+
+// Inject controls into a specific tab
+async function injectControlsIntoTab(tabId) {
+  try {
+    // First inject the content script if not already
+    await injectContentScript(tabId);
+    
+    // Show the floating controls
+    await chrome.tabs.sendMessage(tabId, {
+      action: 'showFloatingControls',
+      config: state.config,
+      startTime: state.startTime,
+      isPaused: state.isPaused
+    });
+    
+    state.injectedTabs.add(tabId);
+  } catch (e) {
+    // Failed to inject into this tab
+  }
+}
 
 // Message handler
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -26,7 +78,8 @@ async function handleMessage(message, sender) {
         isRecording: state.isRecording,
         isPaused: state.isPaused,
         startTime: state.startTime,
-        pausedTime: state.pausedTime
+        pausedTime: state.pausedTime,
+        source: state.config?.source || 'tab'
       };
 
     case 'startRecording':
@@ -62,6 +115,8 @@ async function handleMessage(message, sender) {
     case 'recordingStarted':
       state.isRecording = true;
       state.startTime = Date.now();
+      state.injectedTabs.add(state.activeTabId);
+      updateBadge(true, false);
       await notifyPopup('stateUpdate', { state: 'recording', startTime: state.startTime });
       return { success: true };
 
@@ -219,17 +274,24 @@ async function pauseRecording() {
   try {
     state.isPaused = true;
     state.pausedTime = Date.now();
+    updateBadge(true, true);
 
     await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'pauseRecording'
     });
 
-    if (state.activeTabId) {
-      await chrome.tabs.sendMessage(state.activeTabId, {
-        action: 'updateControls',
-        isPaused: true
-      });
+    // Update controls in all injected tabs
+    for (const tabId of state.injectedTabs) {
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          action: 'updateControls',
+          isPaused: true
+        });
+      } catch (e) {
+        // Tab might be closed
+        state.injectedTabs.delete(tabId);
+      }
     }
 
     return { success: true };
@@ -242,17 +304,24 @@ async function pauseRecording() {
 async function resumeRecording() {
   try {
     state.isPaused = false;
+    updateBadge(true, false);
 
     await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'resumeRecording'
     });
 
-    if (state.activeTabId) {
-      await chrome.tabs.sendMessage(state.activeTabId, {
-        action: 'updateControls',
-        isPaused: false
-      });
+    // Update controls in all injected tabs
+    for (const tabId of state.injectedTabs) {
+      try {
+        await chrome.tabs.sendMessage(tabId, {
+          action: 'updateControls',
+          isPaused: false
+        });
+      } catch (e) {
+        // Tab might be closed
+        state.injectedTabs.delete(tabId);
+      }
     }
 
     return { success: true };
@@ -273,9 +342,29 @@ async function resetRecording() {
     state.isPaused = false;
     state.startTime = null;
     state.pausedTime = 0;
+    updateBadge(false, false);
+    
+    // Hide controls in all injected tabs except the current one
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    const currentTabId = currentTab?.id;
+    
+    for (const tabId of state.injectedTabs) {
+      if (tabId !== currentTabId) {
+        try {
+          await chrome.tabs.sendMessage(tabId, {
+            action: 'hideFloatingControls'
+          });
+        } catch (e) {
+          // Tab might be closed
+        }
+      }
+    }
+    state.injectedTabs.clear();
 
-    if (state.activeTabId) {
-      await chrome.tabs.sendMessage(state.activeTabId, {
+    // Show countdown in current tab
+    if (currentTabId) {
+      state.activeTabId = currentTabId;
+      await chrome.tabs.sendMessage(currentTabId, {
         action: 'showCountdown',
         config: state.config
       });
@@ -318,9 +407,10 @@ async function toggleCameraBubble() {
 
 // Cleanup after recording ends
 async function cleanupRecording() {
-  if (state.activeTabId) {
+  // Hide controls in all injected tabs
+  for (const tabId of state.injectedTabs) {
     try {
-      await chrome.tabs.sendMessage(state.activeTabId, {
+      await chrome.tabs.sendMessage(tabId, {
         action: 'hideFloatingControls'
       });
     } catch (e) {
@@ -334,11 +424,14 @@ async function cleanupRecording() {
     // Might not exist
   }
 
+  updateBadge(false, false);
+  
   state.isRecording = false;
   state.isPaused = false;
   state.startTime = null;
   state.pausedTime = 0;
   state.activeTabId = null;
+  state.injectedTabs.clear();
 
   await notifyPopup('stateUpdate', { state: 'stopped' });
 }
