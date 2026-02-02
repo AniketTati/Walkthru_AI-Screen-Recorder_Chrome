@@ -1,6 +1,6 @@
 # Screen Recorder Chrome Extension
 
-A Loom-style screen recorder extension with camera overlay, pause/resume, and floating controls.
+A screen recorder extension with camera overlay, pause/resume, and floating controls.
 
 ## Features
 
