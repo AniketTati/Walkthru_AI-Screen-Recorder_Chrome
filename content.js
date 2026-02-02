@@ -47,7 +47,14 @@
           break;
         case 'showFloatingControls':
           config = message.config;
-          showFloatingControls();
+          // Sync state from background if provided (when re-injecting on tab switch)
+          if (message.startTime) {
+            startTime = message.startTime;
+          }
+          if (message.isPaused !== undefined) {
+            isPaused = message.isPaused;
+          }
+          showFloatingControls(message.startTime, message.isPaused);
           sendResponse({ success: true });
           break;
         case 'hideFloatingControls':
@@ -153,12 +160,13 @@
   }
 
   // Show floating controls
-  async function showFloatingControls() {
+  async function showFloatingControls(syncStartTime, syncIsPaused) {
     removeFloatingControls();
     
     document.body.classList.add('sr-recording');
-    startTime = Date.now();
-    isPaused = false;
+    // Use synced start time if provided (when switching tabs during recording)
+    startTime = syncStartTime || Date.now();
+    isPaused = syncIsPaused || false;
     pausedDuration = 0;
     
     controlBar = document.createElement('div');
@@ -181,7 +189,8 @@
       cursor: grab !important;
       user-select: none !important;
     `;
-    controlBar.innerHTML = getControlBarHTML(false);
+    // Use the current paused state when creating controls (important for tab switches)
+    controlBar.innerHTML = getControlBarHTML(isPaused);
     document.body.appendChild(controlBar);
     
     setupControlBarEvents();
