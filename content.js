@@ -92,7 +92,8 @@
   function showCountdown() {
     removeCountdown();
     
-    const duration = Math.min(10, Math.max(0, parseInt(config?.countdownDuration, 10) || 3));
+    const raw = parseInt(config?.countdownDuration, 10);
+    const duration = Math.min(10, Math.max(0, isNaN(raw) ? 3 : raw));
     if (duration <= 0) {
       chrome.runtime.sendMessage({ action: 'countdownComplete' });
       return;

@@ -473,7 +473,7 @@ async function startRecording() {
   const config = {
     source: sourceSelect.value,
     quality: qualitySelect.value,
-    countdownDuration: parseInt(countdownSelect.value, 10) || 3,
+    countdownDuration: parseInt(countdownSelect.value, 10) ?? 3,
     cameraId: cameraSelect.value || null,
     micId: micSelect.value || null,
     cameraMode: cameraModeSelect.value,
