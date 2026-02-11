@@ -59,6 +59,7 @@ const timelineCancel = document.getElementById('timelineCancel');
 const timelineConfirm = document.getElementById('timelineConfirm');
 const speedSlider = document.getElementById('speedSlider');
 const speedInput = document.getElementById('speedInput');
+const wordCountEl = document.getElementById('wordCount');
 
 let currentScriptId = null;
 let pendingTimelinePosition = null;
@@ -249,6 +250,14 @@ function renderTimelineList() {
   });
 }
 
+function updateWordCount() {
+  if (!wordCountEl) return;
+  const { content } = getContentFromEditor();
+  const trimmed = content.trim();
+  const words = trimmed ? trimmed.split(/\s+/).length : 0;
+  wordCountEl.textContent = words + (words === 1 ? ' word' : ' words');
+}
+
 function setSpeed(value) {
   const v = Math.min(200, Math.max(60, parseInt(value, 10) || 120));
   speedSlider.value = v;
@@ -267,6 +276,7 @@ function openEditor(id = null) {
         setSpeed(script.defaultSpeed || 120);
       }
       renderTimelineList();
+      updateWordCount();
     });
   } else {
     editorTitle.textContent = 'New script';
@@ -274,6 +284,7 @@ function openEditor(id = null) {
     setContentInEditor('', []);
     setSpeed(120);
     renderTimelineList();
+    updateWordCount();
   }
   timelineError.classList.add('hidden');
   showEditor();
@@ -313,6 +324,7 @@ timelineConfirm.addEventListener('click', () => {
   const points = [...timelinePoints, { position: pendingTimelinePosition, showAt: seconds }];
   setContentInEditor(content, points);
   renderTimelineList();
+  updateWordCount();
   timelineModal.classList.add('hidden');
   pendingTimelinePosition = null;
 });
@@ -383,6 +395,10 @@ speedInput.addEventListener('change', () => {
   if (isNaN(v) || v < 60 || v > 200) {
     setSpeed(120);
   }
+});
+
+scriptContent.addEventListener('input', () => {
+  updateWordCount();
 });
 
 scriptContent.addEventListener('paste', (e) => {
