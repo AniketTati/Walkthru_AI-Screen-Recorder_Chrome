@@ -5,8 +5,10 @@ const cameraPreview = document.getElementById('cameraPreview');
 const previewPlaceholder = document.getElementById('previewPlaceholder');
 const previewSection = document.querySelector('.preview-section');
 const sourceSelect = document.getElementById('sourceSelect');
+const qualitySelect = document.getElementById('qualitySelect');
 const cameraSelect = document.getElementById('cameraSelect');
 const micSelect = document.getElementById('micSelect');
+const qualityRow = document.getElementById('qualityRow');
 const cameraRow = document.getElementById('cameraRow');
 const micRow = document.getElementById('micRow');
 const cameraModeRow = document.getElementById('cameraModeRow');
@@ -29,11 +31,25 @@ let currentMode = 'video';
 
 // Initialize
 document.addEventListener('DOMContentLoaded', async () => {
+  await checkStoredError();
   await checkRecordingState();
   await enumerateDevices();
   await loadSavedPreferences();
   setupEventListeners();
 });
+
+// Check for stored error from background (e.g. recording failure when popup was closed)
+async function checkStoredError() {
+  try {
+    const { lastError } = await chrome.storage.local.get('lastError');
+    if (lastError) {
+      await chrome.storage.local.remove('lastError');
+      showError(lastError);
+      // Clear error badge
+      chrome.action.setBadgeText({ text: '' });
+    }
+  } catch (e) {}
+}
 
 // Check if already recording
 async function checkRecordingState() {
@@ -84,10 +100,13 @@ async function enumerateDevices() {
 // Load saved preferences
 async function loadSavedPreferences() {
   try {
-    const prefs = await chrome.storage.local.get(['source', 'cameraId', 'micId', 'cameraMode', 'profilePhoto']);
+    const prefs = await chrome.storage.local.get(['source', 'quality', 'cameraId', 'micId', 'cameraMode', 'profilePhoto']);
     
     if (prefs.source) {
       sourceSelect.value = prefs.source;
+    }
+    if (prefs.quality && qualitySelect.querySelector(`option[value="${prefs.quality}"]`)) {
+      qualitySelect.value = prefs.quality;
     }
     if (prefs.cameraId && cameraSelect.querySelector(`option[value="${prefs.cameraId}"]`)) {
       cameraSelect.value = prefs.cameraId;
@@ -115,6 +134,7 @@ async function savePreferences() {
   try {
     await chrome.storage.local.set({
       source: sourceSelect.value,
+      quality: qualitySelect.value,
       cameraId: cameraSelect.value,
       micId: micSelect.value,
       cameraMode: cameraModeSelect.value,
@@ -140,6 +160,7 @@ function updateCameraOptionsVisibility() {
 function updateModeUI() {
   if (currentMode === 'photo') {
     previewSection.style.display = 'none';
+    qualityRow.style.display = 'none';
     cameraRow.style.display = 'none';
     micRow.style.display = 'none';
     cameraModeRow.style.display = 'none';
@@ -153,6 +174,7 @@ function updateModeUI() {
     }
   } else {
     previewSection.style.display = 'block';
+    qualityRow.style.display = 'flex';
     cameraRow.style.display = 'flex';
     micRow.style.display = 'flex';
     startBtn.textContent = 'Start Recording';
@@ -282,6 +304,7 @@ function setupEventListeners() {
 
   cameraModeSelect.addEventListener('change', savePreferences);
   sourceSelect.addEventListener('change', savePreferences);
+  qualitySelect.addEventListener('change', savePreferences);
   micSelect.addEventListener('change', savePreferences);
 
   photoUpload.addEventListener('change', (e) => {
@@ -369,6 +392,7 @@ async function startRecording() {
 
   const config = {
     source: sourceSelect.value,
+    quality: qualitySelect.value,
     cameraId: cameraSelect.value || null,
     micId: micSelect.value || null,
     cameraMode: cameraModeSelect.value,

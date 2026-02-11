@@ -9,6 +9,9 @@ let micStream = null;
 let isStopping = false; // Guard against concurrent stop calls
 let recordingMimeType = 'video/webm';
 
+// Track blob URLs for large file downloads - revoke only when download completes
+const pendingBlobUrls = new Map(); // downloadId -> blobUrl
+
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== 'offscreen') {
@@ -63,11 +66,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         .then(result => sendResponse(result))
         .catch(err => sendResponse({ success: false, error: err.message }));
       return true;
+
+    case 'downloadComplete':
+      if (message.downloadId && pendingBlobUrls.has(message.downloadId)) {
+        const blobUrl = pendingBlobUrls.get(message.downloadId);
+        URL.revokeObjectURL(blobUrl);
+        pendingBlobUrls.delete(message.downloadId);
+      }
+      sendResponse({ success: true });
+      return true;
       
     default:
       return false;
   }
 });
+
+// Resolution presets: ideal dimensions and bitrate (bps)
+const QUALITY_PRESETS = {
+  '720p': { width: 1280, height: 720, videoBitsPerSecond: 4000000 },
+  '1080p': { width: 1920, height: 1080, videoBitsPerSecond: 8000000 },
+  '4k': { width: 3840, height: 2160, videoBitsPerSecond: 16000000 }
+};
+
+function getVideoConstraints(quality) {
+  const preset = QUALITY_PRESETS[quality] || QUALITY_PRESETS['1080p'];
+  return {
+    width: { ideal: preset.width, max: preset.width },
+    height: { ideal: preset.height, max: preset.height },
+    frameRate: { ideal: 30, max: 60 }
+  };
+}
 
 // Request permission (shows the screen picker dialog)
 async function requestPermission(config) {
@@ -81,14 +109,11 @@ async function requestPermission(config) {
     micStream = null;
   }
   
+  const videoConstraints = getVideoConstraints(config?.quality);
   screenStream = await navigator.mediaDevices.getDisplayMedia({
-    video: {
-      width: { ideal: 1920, max: 3840 },
-      height: { ideal: 1080, max: 2160 },
-      frameRate: { ideal: 30, max: 60 }
-    },
+    video: videoConstraints,
     audio: true,
-    preferCurrentTab: false
+    preferCurrentTab: config?.source === 'tab'
   });
   
   const videoTrack = screenStream.getVideoTracks()[0];
@@ -136,7 +161,7 @@ async function startRecording(config) {
   
   data = [];
   isStopping = false;
-  await setupRecorder();
+  await setupRecorder(config);
   
   // Notify background that recording has started
   try {
@@ -147,7 +172,7 @@ async function startRecording(config) {
 }
 
 // Setup the MediaRecorder
-async function setupRecorder() {
+async function setupRecorder(config) {
   const tracks = [];
   
   const videoTrack = screenStream.getVideoTracks()[0];
@@ -214,9 +239,10 @@ async function setupRecorder() {
     }
   }
   
+  const preset = QUALITY_PRESETS[config?.quality] || QUALITY_PRESETS['1080p'];
   recorder = new MediaRecorder(combinedStream, { 
     mimeType: recordingMimeType,
-    videoBitsPerSecond: 8000000,
+    videoBitsPerSecond: preset.videoBitsPerSecond,
     audioBitsPerSecond: 128000
   });
   
@@ -228,10 +254,11 @@ async function setupRecorder() {
   
   // CRITICAL: Handle MediaRecorder errors instead of swallowing them
   recorder.onerror = (event) => {
+    const errorMsg = event.error?.message || 'Recording failed';
     console.error('MediaRecorder error:', event.error);
     cleanup();
     try {
-      chrome.runtime.sendMessage({ action: 'recordingStopped' });
+      chrome.runtime.sendMessage({ action: 'recordingStopped', error: errorMsg });
     } catch (e) {}
   };
   
@@ -288,6 +315,14 @@ async function saveBlob(blob) {
         console.log('Recording saved via base64 download');
         return;
       }
+      if (response?.error) {
+        chrome.runtime.sendMessage({
+          action: 'reportError',
+          message: response.error,
+          showBadge: true,
+          notify: true
+        }).catch(() => {});
+      }
     } catch (e) {
       console.warn('Base64 save failed, trying blob URL:', e.message);
     }
@@ -303,12 +338,31 @@ async function saveBlob(blob) {
     });
     if (response?.success) {
       console.log('Recording saved via blob URL download');
-      // Keep blob URL alive long enough for download to read it
-      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      // Keep blob URL alive until download completes (background notifies via downloadComplete)
+      if (response.downloadId) {
+        pendingBlobUrls.set(response.downloadId, blobUrl);
+      } else {
+        // Fallback: revoke after 5 min if no downloadId
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 300000);
+      }
       return;
+    }
+    if (response?.error) {
+      chrome.runtime.sendMessage({
+        action: 'reportError',
+        message: response.error,
+        showBadge: true,
+        notify: true
+      }).catch(() => {});
     }
   } catch (e) {
     console.warn('Blob URL save failed, trying direct download:', e.message);
+    chrome.runtime.sendMessage({
+      action: 'reportError',
+      message: 'Failed to save recording. Try direct download.',
+      showBadge: true,
+      notify: true
+    }).catch(() => {});
   }
   
   // Last resort: direct download from offscreen document
