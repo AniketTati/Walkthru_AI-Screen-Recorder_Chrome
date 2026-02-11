@@ -8,7 +8,9 @@ let state = {
   pausedTime: 0,
   activeTabId: null,
   config: null,
-  injectedTabs: new Set() // Track all tabs with injected controls
+  injectedTabs: new Set(),
+  teleprompterWindowId: null,
+  pausedDuration: 0
 };
 
 // Central error reporting - store and surface to user
@@ -116,18 +118,18 @@ async function getTeleprompterScriptData() {
 // Inject controls into a specific tab
 async function injectControlsIntoTab(tabId) {
   try {
-    // First inject the content script if not already
     await injectContentScript(tabId);
     
+    const displayMode = state.config?.teleprompterDisplayMode || 'window';
     const teleprompterScript = await getTeleprompterScriptData();
     
-    // Show the floating controls
     await chrome.tabs.sendMessage(tabId, {
       action: 'showFloatingControls',
       config: state.config,
       startTime: state.startTime,
       isPaused: state.isPaused,
-      teleprompterScript
+      teleprompterScript: displayMode === 'overlay' ? teleprompterScript : null,
+      teleprompterInWindow: teleprompterScript && displayMode === 'window'
     });
     
     state.injectedTabs.add(tabId);
@@ -160,6 +162,18 @@ async function handleMessage(message, sender) {
         pausedTime: state.pausedTime,
         source: state.config?.source || 'tab'
       };
+
+    case 'getTeleprompterState': {
+      let elapsedMs = 0;
+      if (state.startTime) {
+        let paused = state.pausedDuration || 0;
+        if (state.isPaused && state.pausedTime) {
+          paused += (Date.now() - state.pausedTime);
+        }
+        elapsedMs = Date.now() - state.startTime - paused;
+      }
+      return { elapsedMs, isPaused: state.isPaused || false };
+    }
 
     case 'startRecording':
       return await startRecording(message.config);
@@ -197,6 +211,7 @@ async function handleMessage(message, sender) {
     case 'recordingStarted':
       state.isRecording = true;
       state.startTime = Date.now();
+      state.pausedDuration = 0;
       state.injectedTabs.add(state.activeTabId);
       updateBadge(true, false);
       await notifyPopup('stateUpdate', { state: 'recording', startTime: state.startTime });
@@ -329,12 +344,27 @@ async function onCountdownComplete() {
       throw new Error(response?.error || 'Failed to start recording in offscreen');
     }
 
+    const displayMode = state.config?.teleprompterDisplayMode || 'window';
     const teleprompterScript = await getTeleprompterScriptData();
+
+    if (teleprompterScript && displayMode === 'window') {
+      await chrome.storage.local.set({ teleprompterActiveScript: teleprompterScript });
+      const win = await chrome.windows.create({
+        url: chrome.runtime.getURL('teleprompter.html'),
+        type: 'popup',
+        width: 400,
+        height: 500,
+        left: 100,
+        top: 100
+      });
+      state.teleprompterWindowId = win.id;
+    }
 
     await chrome.tabs.sendMessage(state.activeTabId, {
       action: 'showFloatingControls',
       config: state.config,
-      teleprompterScript
+      teleprompterScript: displayMode === 'overlay' ? teleprompterScript : null,
+      teleprompterInWindow: teleprompterScript && displayMode === 'window'
     });
 
     return { success: true };
@@ -425,6 +455,10 @@ async function pauseRecording() {
 async function resumeRecording() {
   try {
     state.isPaused = false;
+    if (state.pausedTime) {
+      state.pausedDuration = (state.pausedDuration || 0) + (Date.now() - state.pausedTime);
+      state.pausedTime = null;
+    }
     updateBadge(true, false);
 
     await chrome.runtime.sendMessage({
@@ -466,6 +500,12 @@ async function resetRecording() {
     state.isPaused = false;
     state.startTime = null;
     state.pausedTime = 0;
+    state.pausedDuration = 0;
+    if (state.teleprompterWindowId != null) {
+      try { await chrome.windows.remove(state.teleprompterWindowId); } catch (e) {}
+      state.teleprompterWindowId = null;
+    }
+    await chrome.storage.local.remove('teleprompterActiveScript');
     updateBadge(false, false);
     
     // Hide controls in all injected tabs except the current one
@@ -529,10 +569,19 @@ async function toggleCameraBubble() {
   }
 }
 
-// Toggle teleprompter overlay visibility
+// Toggle teleprompter visibility (window: minimize/restore, overlay: show/hide)
 async function toggleTeleprompter() {
   try {
-    if (state.activeTabId) {
+    const displayMode = state.config?.teleprompterDisplayMode || 'window';
+    if (displayMode === 'window' && state.teleprompterWindowId != null) {
+      const win = await chrome.windows.get(state.teleprompterWindowId).catch(() => null);
+      if (win) {
+        await chrome.windows.update(state.teleprompterWindowId, {
+          state: win.state === 'minimized' ? 'normal' : 'minimized',
+          focused: win.state === 'minimized'
+        });
+      }
+    } else if (state.activeTabId) {
       await chrome.tabs.sendMessage(state.activeTabId, {
         action: 'toggleTeleprompter'
       });
@@ -580,12 +629,22 @@ async function cleanupRecording() {
     // Offscreen might not exist
   }
 
+  // Close teleprompter window if open
+  if (state.teleprompterWindowId != null) {
+    try {
+      await chrome.windows.remove(state.teleprompterWindowId);
+    } catch (e) {}
+    state.teleprompterWindowId = null;
+  }
+  await chrome.storage.local.remove('teleprompterActiveScript');
+
   updateBadge(false, false);
   
   state.isRecording = false;
   state.isPaused = false;
   state.startTime = null;
   state.pausedTime = 0;
+  state.pausedDuration = 0;
   state.activeTabId = null;
   state.injectedTabs.clear();
 

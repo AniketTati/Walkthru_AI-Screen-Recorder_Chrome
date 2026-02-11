@@ -19,6 +19,7 @@
   let pauseStartTime = null;
   let teleprompterBubble = null;
   let teleprompterScript = null;
+  let teleprompterInWindow = false;
   let teleprompterBubbleVisible = true;
   let teleprompterScrollInterval = null;
 
@@ -70,7 +71,7 @@
           if (message.isPaused !== undefined) {
             isPaused = message.isPaused;
           }
-          showFloatingControls(message.startTime, message.isPaused, message.teleprompterScript);
+          showFloatingControls(message.startTime, message.isPaused, message.teleprompterScript, message.teleprompterInWindow);
           sendResponse({ success: true });
           break;
         case 'hideFloatingControls':
@@ -187,10 +188,11 @@
   }
 
   // Show floating controls
-  async function showFloatingControls(syncStartTime, syncIsPaused, messageTeleprompterScript) {
+  async function showFloatingControls(syncStartTime, syncIsPaused, messageTeleprompterScript, messageTeleprompterInWindow) {
     removeFloatingControls();
     
     teleprompterScript = messageTeleprompterScript || null;
+    teleprompterInWindow = messageTeleprompterInWindow || false;
     
     document.body.classList.add('sr-recording');
     // Use synced start time if provided (when switching tabs during recording)
@@ -262,11 +264,12 @@
   // Get control bar HTML
   function getControlBarHTML(paused) {
     const hasCamera = config && config.cameraId;
-    const hasTeleprompter = !!teleprompterScript;
+    const hasTeleprompter = !!teleprompterScript || teleprompterInWindow;
     
+    const scriptOffClass = teleprompterInWindow ? '' : (teleprompterBubbleVisible ? '' : 'off');
     const teleprompterBtn = hasTeleprompter ? `
           <div class="sr-divider" style="${dividerStyle}"></div>
-          <button class="sr-control-btn script ${teleprompterBubbleVisible ? '' : 'off'}" style="${btnStyle}" data-action="toggleTeleprompter">
+          <button class="sr-control-btn script ${scriptOffClass}" style="${btnStyle}" data-action="toggleTeleprompter">
             ${icons.script}
           </button>
         ` : '';
@@ -663,7 +666,7 @@
     if (!teleprompterScript || !teleprompterScript.content) return;
     
     if (teleprompterScrollInterval) {
-      clearInterval(teleprompterScrollInterval);
+      cancelAnimationFrame(teleprompterScrollInterval);
       teleprompterScrollInterval = null;
     }
     
@@ -698,6 +701,7 @@
       line-height: 1.5 !important;
       color: #e0e0e0 !important;
       white-space: pre-wrap !important;
+      scroll-behavior: smooth !important;
     `;
     textDiv.textContent = teleprompterScript.content;
     
@@ -709,6 +713,7 @@
     const speed = teleprompterScript.defaultSpeed || 120;
     const timelinePoints = (teleprompterScript.timelinePoints || []).sort((a, b) => a.showAt - b.showAt);
     const pxPerSec = Math.max(20, Math.min(80, speed * 0.4));
+    let lastScrollTop = 0;
     
     function getElapsedSeconds() {
       if (!startTime) return 0;
@@ -717,16 +722,22 @@
       return elapsed / 1000;
     }
     
-    teleprompterScrollInterval = setInterval(() => {
+    function scrollTick() {
       if (!teleprompterBubble || !textDiv) return;
-      if (isPaused) return;
+      if (isPaused) {
+        teleprompterScrollInterval = requestAnimationFrame(scrollTick);
+        return;
+      }
       
       const elapsed = getElapsedSeconds();
       const content = teleprompterScript.content;
       const maxScroll = textDiv.scrollHeight - textDiv.clientHeight;
-      if (maxScroll <= 0) return;
+      if (maxScroll <= 0) {
+        teleprompterScrollInterval = requestAnimationFrame(scrollTick);
+        return;
+      }
       
-      let targetScrollTop = textDiv.scrollTop;
+      let targetScrollTop = lastScrollTop;
       let shouldJump = false;
       for (let i = timelinePoints.length - 1; i >= 0; i--) {
         if (elapsed >= timelinePoints[i].showAt) {
@@ -741,15 +752,25 @@
       }
       
       if (shouldJump) {
+        lastScrollTop = targetScrollTop;
         textDiv.scrollTop = targetScrollTop;
       } else {
-        textDiv.scrollTop = Math.min(maxScroll, textDiv.scrollTop + pxPerSec * 0.1);
+        const delta = pxPerSec * 0.016; // ~60fps
+        lastScrollTop = Math.min(maxScroll, lastScrollTop + delta);
+        textDiv.scrollTop = lastScrollTop;
       }
-    }, 100);
+      
+      teleprompterScrollInterval = requestAnimationFrame(scrollTick);
+    }
+    teleprompterScrollInterval = requestAnimationFrame(scrollTick);
   }
 
-  // Toggle teleprompter visibility
+  // Toggle teleprompter visibility (overlay: show/hide. Window mode: handled by background)
   function toggleTeleprompter() {
+    if (teleprompterInWindow) {
+      chrome.runtime.sendMessage({ action: 'toggleTeleprompter' });
+      return;
+    }
     teleprompterBubbleVisible = !teleprompterBubbleVisible;
     
     if (teleprompterBubble) {
@@ -831,7 +852,7 @@
     }
     
     if (teleprompterScrollInterval) {
-      clearInterval(teleprompterScrollInterval);
+      cancelAnimationFrame(teleprompterScrollInterval);
       teleprompterScrollInterval = null;
     }
     
