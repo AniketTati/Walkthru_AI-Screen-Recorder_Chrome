@@ -47,6 +47,31 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
   }
 });
 
+// Listen for page navigation to re-inject controls when a tab navigates during recording
+chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
+  if (!state.isRecording || changeInfo.status !== 'complete') {
+    return;
+  }
+  
+  // Only re-inject if this tab was previously injected (content script lost on navigation)
+  if (!state.injectedTabs.has(tabId)) {
+    return;
+  }
+  
+  // Mark as needing re-injection
+  state.injectedTabs.delete(tabId);
+  
+  try {
+    if (!tab.url || tab.url.startsWith('chrome://') || tab.url.startsWith('chrome-extension://') || tab.url.startsWith('about:')) {
+      return;
+    }
+    
+    await injectControlsIntoTab(tabId);
+  } catch (e) {
+    console.error('Tab navigation re-inject error:', e);
+  }
+});
+
 // Inject controls into a specific tab
 async function injectControlsIntoTab(tabId) {
   try {
@@ -72,7 +97,12 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target === 'offscreen') {
     return false;
   }
-  handleMessage(message, sender).then(sendResponse);
+  handleMessage(message, sender)
+    .then(sendResponse)
+    .catch(err => {
+      console.error('handleMessage error:', err);
+      sendResponse({ success: false, error: err.message });
+    });
   return true;
 });
 
@@ -281,13 +311,15 @@ async function stopRecording() {
       action: 'stopRecording'
     });
     
-    // Set a timeout to ensure cleanup happens even if offscreen doesn't respond
+    // Safety net: force cleanup if offscreen doesn't respond in time
+    // (handles cases where offscreen crashes, onstop never fires, etc.)
     setTimeout(async () => {
       if (state.isRecording) {
         console.log('Stop recording timeout - forcing cleanup');
+        try { await chrome.offscreen.closeDocument(); } catch (e) {}
         await cleanupRecording();
       }
-    }, 5000);
+    }, 15000);
 
     return { success: true };
   } catch (e) {
@@ -358,12 +390,15 @@ async function resumeRecording() {
   }
 }
 
-// Reset recording (discard and start fresh)
+// Reset recording (discard current recording and start fresh)
+// FIXED: Uses resetForRerecord to keep streams alive instead of discardRecording
+// which killed the streams, causing the re-record to always fail silently
 async function resetRecording() {
   try {
+    // Reset the recorder but KEEP the screen/mic streams alive
     await chrome.runtime.sendMessage({
       target: 'offscreen',
-      action: 'discardRecording'
+      action: 'resetForRerecord'
     });
 
     state.isRecording = false;
@@ -389,7 +424,7 @@ async function resetRecording() {
     }
     state.injectedTabs.clear();
 
-    // Show countdown in current tab
+    // Show countdown in current tab (streams are still alive, so startRecording will work)
     if (currentTabId) {
       state.activeTabId = currentTabId;
       await chrome.tabs.sendMessage(currentTabId, {
@@ -446,10 +481,28 @@ async function cleanupRecording() {
     }
   }
 
+  // Also try the current active tab as a fallback
+  // (handles service worker restart case where injectedTabs is empty)
   try {
-    await chrome.offscreen.closeDocument();
+    const [currentTab] = await chrome.tabs.query({ active: true, currentWindow: true });
+    if (currentTab && !state.injectedTabs.has(currentTab.id)) {
+      await chrome.tabs.sendMessage(currentTab.id, {
+        action: 'hideFloatingControls'
+      });
+    }
   } catch (e) {
-    // Might not exist
+    // Tab might not have content script
+  }
+
+  // Tell offscreen to cleanup its streams (but DON'T close the document yet -
+  // closing immediately can invalidate blob URLs for pending downloads)
+  try {
+    await chrome.runtime.sendMessage({
+      target: 'offscreen',
+      action: 'discardRecording'
+    });
+  } catch (e) {
+    // Offscreen might not exist
   }
 
   updateBadge(false, false);
@@ -514,13 +567,18 @@ async function ensureOffscreenDocument() {
   if (creatingOffscreen) {
     await creatingOffscreen;
   } else {
-    creatingOffscreen = chrome.offscreen.createDocument({
-      url: 'offscreen.html',
-      reasons: ['USER_MEDIA', 'DISPLAY_MEDIA', 'BLOBS'],
-      justification: 'Recording screen with getDisplayMedia, camera with getUserMedia, and creating blob URLs for download'
-    });
-    await creatingOffscreen;
-    creatingOffscreen = null;
+    try {
+      creatingOffscreen = chrome.offscreen.createDocument({
+        url: 'offscreen.html',
+        reasons: ['USER_MEDIA', 'DISPLAY_MEDIA', 'BLOBS'],
+        justification: 'Recording screen with getDisplayMedia, camera with getUserMedia, and creating blob URLs for download'
+      });
+      await creatingOffscreen;
+    } finally {
+      // CRITICAL: Always reset even if createDocument throws, otherwise
+      // all future recording attempts hang forever on the rejected promise
+      creatingOffscreen = null;
+    }
   }
 }
 
