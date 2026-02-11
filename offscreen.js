@@ -8,6 +8,7 @@ let screenStream = null;
 let micStream = null;
 let isStopping = false; // Guard against concurrent stop calls
 let recordingMimeType = 'video/webm';
+let currentFilenamePrefix = ''; // Set at startRecording for use in saveBlob
 
 // Track blob URLs for large file downloads - revoke only when download completes
 const pendingBlobUrls = new Map(); // downloadId -> blobUrl
@@ -161,6 +162,7 @@ async function startRecording(config) {
   
   data = [];
   isStopping = false;
+  currentFilenamePrefix = (config?.filenamePrefix || '').replace(/[^a-zA-Z0-9_-]/g, '');
   await setupRecorder(config);
   
   // Notify background that recording has started
@@ -298,7 +300,9 @@ async function setupRecorder(config) {
 // Save the recorded blob
 async function saveBlob(blob) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-  const filename = `recording-${timestamp}.webm`;
+  const filename = currentFilenamePrefix
+    ? `${currentFilenamePrefix}-recording-${timestamp}.webm`
+    : `recording-${timestamp}.webm`;
   
   // For files that fit in a single message as base64 (~45MB source → ~60MB base64, under 64MB limit)
   const MAX_BASE64_SIZE = 45 * 1024 * 1024;
@@ -544,7 +548,8 @@ async function captureScreenshot(config) {
     stream = null;
     
     const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-    const filename = `screenshot-${timestamp}.png`;
+    const prefix = (config?.filenamePrefix || '').replace(/[^a-zA-Z0-9_-]/g, '');
+    const filename = prefix ? `${prefix}-screenshot-${timestamp}.png` : `screenshot-${timestamp}.png`;
     
     chrome.runtime.sendMessage({
       action: 'saveRecording',
