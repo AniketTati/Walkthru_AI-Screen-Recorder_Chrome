@@ -43,6 +43,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await checkRecordingState();
   await enumerateDevices();
   await loadSavedPreferences();
+  updateModeUI();
   setupEventListeners();
   if (currentMode === 'video') updateMicLevelMeter();
 });
@@ -109,8 +110,13 @@ async function enumerateDevices() {
 // Load saved preferences
 async function loadSavedPreferences() {
   try {
-    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'profilePhoto', 'filenamePrefix']);
+    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'profilePhoto', 'filenamePrefix', 'mode']);
     
+    if (prefs.mode === 'photo' || prefs.mode === 'video') {
+      currentMode = prefs.mode;
+      document.querySelectorAll('.mode-btn').forEach(b => b.classList.remove('active'));
+      document.querySelector(`.mode-btn[data-mode="${currentMode}"]`)?.classList.add('active');
+    }
     if (prefs.source) {
       sourceSelect.value = prefs.source;
     }
@@ -155,7 +161,8 @@ async function savePreferences() {
       micId: micSelect.value,
       cameraMode: cameraModeSelect.value,
       profilePhoto: profilePhotoData,
-      filenamePrefix: filenamePrefix.value.trim()
+      filenamePrefix: filenamePrefix.value.trim(),
+      mode: currentMode
     });
   } catch (e) {
     // Failed to save preferences
@@ -359,6 +366,7 @@ function setupEventListeners() {
       btn.classList.add('active');
       currentMode = btn.dataset.mode;
       updateModeUI();
+      savePreferences();
     });
   });
 
