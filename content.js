@@ -408,25 +408,58 @@
       return;
     }
     
-    await new Promise(resolve => setTimeout(resolve, 500));
+    // Retry camera acquisition up to 3 times with increasing delays.
+    // The camera hardware may still be releasing from the popup's preview stream,
+    // and different OS/hardware combinations take different amounts of time.
+    const maxAttempts = 3;
+    let lastError = null;
     
-    try {
+    for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+      // Wait before each attempt: 600ms, 1200ms, 1800ms
+      await new Promise(resolve => setTimeout(resolve, attempt * 600));
+      
       try {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: { deviceId: { exact: config.cameraId } }
-        });
-      } catch (exactError) {
-        cameraStream = await navigator.mediaDevices.getUserMedia({
-          video: true
-        });
+        // First try the exact selected device
+        try {
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: { deviceId: { exact: config.cameraId } }
+          });
+        } catch (exactError) {
+          // Specific device unavailable, try any camera as fallback
+          console.warn(`Camera device ${config.cameraId} failed, trying any camera:`, exactError.message);
+          cameraStream = await navigator.mediaDevices.getUserMedia({
+            video: true
+          });
+        }
+        
+        // Verify we actually got a valid video track
+        const videoTrack = cameraStream?.getVideoTracks()[0];
+        if (!videoTrack || videoTrack.readyState === 'ended') {
+          throw new Error('Camera stream has no active video track');
+        }
+        
+        // Success - create the bubble and return
+        console.log('Camera bubble: stream acquired on attempt', attempt);
+        createBubbleElement();
+        cameraBubbleVisible = true;
+        return;
+        
+      } catch (e) {
+        lastError = e;
+        console.warn(`Camera bubble attempt ${attempt}/${maxAttempts} failed:`, e.message);
+        
+        // Clean up failed stream
+        if (cameraStream) {
+          cameraStream.getTracks().forEach(t => { try { t.stop(); } catch (err) {} });
+          cameraStream = null;
+        }
       }
-      
-      createBubbleElement();
-      
-    } catch (e) {
-      createPhotoBubble();
-      cameraBubbleVisible = true;
     }
+    
+    // All attempts failed - fall back to photo bubble
+    console.warn('Camera bubble: all attempts failed, falling back to photo. Last error:', lastError?.message);
+    createPhotoBubble();
+    cameraBubbleVisible = true;
   }
   
   // Create photo bubble
@@ -509,9 +542,38 @@
       display: block !important;
     `;
     
-    video.onloadedmetadata = () => {
-      video.play().catch(() => {});
+    // Handle video play with retry on failure
+    // Some pages block autoplay; we retry on user interaction with the bubble
+    let videoPlaying = false;
+    
+    const tryPlay = () => {
+      video.play()
+        .then(() => { videoPlaying = true; })
+        .catch((err) => {
+          console.warn('Camera bubble video play failed:', err.message);
+          // Will retry on user interaction (click/mousedown on bubble)
+        });
     };
+    
+    video.onloadedmetadata = tryPlay;
+    
+    // Also try playing after a short delay (some browsers need this)
+    setTimeout(tryPlay, 200);
+    
+    // Monitor if the camera track ends unexpectedly
+    const videoTrack = cameraStream?.getVideoTracks()[0];
+    if (videoTrack) {
+      videoTrack.onended = () => {
+        console.warn('Camera track ended unexpectedly');
+        // Replace with photo bubble if camera dies
+        if (cameraBubble && cameraStream) {
+          cameraBubble.remove();
+          cameraBubble = null;
+          cameraStream = null;
+          createPhotoBubble();
+        }
+      };
+    }
     
     cameraBubble.appendChild(video);
     document.body.appendChild(cameraBubble);
@@ -520,6 +582,10 @@
     
     let clickTimeout;
     cameraBubble.addEventListener('mousedown', () => {
+      // Retry video play on user interaction (bypasses autoplay policy)
+      if (!videoPlaying) {
+        tryPlay();
+      }
       clickTimeout = setTimeout(() => {
         clickTimeout = null;
       }, 200);

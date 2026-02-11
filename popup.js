@@ -382,7 +382,9 @@ async function startRecording() {
     });
 
     if (response && response.success) {
-      startBtn.textContent = 'Starting...';
+      // Close popup so the user can see the countdown and controls on the page
+      window.close();
+      return;
     } else {
       const errorMessage = response?.error || 'Failed to start recording';
       showError(errorMessage);

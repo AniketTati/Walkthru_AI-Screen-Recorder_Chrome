@@ -6,6 +6,8 @@ let recorder = null;
 let data = [];
 let screenStream = null;
 let micStream = null;
+let isStopping = false; // Guard against concurrent stop calls
+let recordingMimeType = 'video/webm';
 
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -46,11 +48,13 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return true;
       
     case 'discardRecording':
-      data = [];
-      if (recorder && recorder.state !== 'inactive') {
-        recorder.stop();
-      }
-      cleanup();
+      discardRecording();
+      sendResponse({ success: true });
+      return true;
+
+    case 'resetForRerecord':
+      // Reset recorder but keep streams alive for re-recording
+      resetForRerecord();
       sendResponse({ success: true });
       return true;
 
@@ -67,30 +71,32 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 
 // Request permission (shows the screen picker dialog)
 async function requestPermission(config) {
+  // Clean up any existing streams first
   if (screenStream) {
-    screenStream.getTracks().forEach(t => t.stop());
+    screenStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
     screenStream = null;
   }
-  
-  try {
-    screenStream = await navigator.mediaDevices.getDisplayMedia({
-      video: {
-        width: { ideal: 1920, max: 3840 },
-        height: { ideal: 1080, max: 2160 },
-        frameRate: { ideal: 30, max: 60 }
-      },
-      audio: true,
-      preferCurrentTab: false
-    });
-  } catch (e) {
-    throw e;
+  if (micStream) {
+    micStream.getTracks().forEach(t => { try { t.stop(); } catch (e) {} });
+    micStream = null;
   }
+  
+  screenStream = await navigator.mediaDevices.getDisplayMedia({
+    video: {
+      width: { ideal: 1920, max: 3840 },
+      height: { ideal: 1080, max: 2160 },
+      frameRate: { ideal: 30, max: 60 }
+    },
+    audio: true,
+    preferCurrentTab: false
+  });
   
   const videoTrack = screenStream.getVideoTracks()[0];
   if (!videoTrack) {
     throw new Error('No video track in screen stream');
   }
   
+  // Get microphone if configured
   if (config.micId) {
     try {
       micStream = await navigator.mediaDevices.getUserMedia({
@@ -104,12 +110,14 @@ async function requestPermission(config) {
       try {
         micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
       } catch (e2) {
-        // Continue without microphone
+        console.warn('Microphone unavailable, continuing without mic');
       }
     }
   }
   
+  // Handle user clicking browser's "Stop sharing" button
   videoTrack.onended = () => {
+    console.log('Screen sharing stopped by user/browser');
     stopRecording();
   };
 }
@@ -120,13 +128,22 @@ async function startRecording(config) {
     throw new Error('Already recording');
   }
   
-  if (!screenStream) {
-    throw new Error('No screen stream - permission not granted');
+  // Verify screen stream is still active (might have expired between permission and countdown)
+  if (!screenStream || screenStream.getVideoTracks().length === 0 ||
+      screenStream.getVideoTracks()[0].readyState === 'ended') {
+    throw new Error('Screen stream is no longer active. Please try again.');
   }
   
   data = [];
+  isStopping = false;
   await setupRecorder();
-  chrome.runtime.sendMessage({ action: 'recordingStarted' });
+  
+  // Notify background that recording has started
+  try {
+    chrome.runtime.sendMessage({ action: 'recordingStarted' });
+  } catch (e) {
+    console.warn('Failed to notify recordingStarted:', e);
+  }
 }
 
 // Setup the MediaRecorder
@@ -138,6 +155,7 @@ async function setupRecorder() {
     tracks.push(videoTrack);
   }
   
+  // Collect audio sources
   const audioSources = [];
   
   if (screenStream) {
@@ -154,6 +172,7 @@ async function setupRecorder() {
     }
   }
   
+  // Mix audio if multiple sources
   if (audioSources.length > 0) {
     if (audioSources.length === 1) {
       tracks.push(audioSources[0]);
@@ -172,6 +191,7 @@ async function setupRecorder() {
           tracks.push(mixedTrack);
         }
       } catch (e) {
+        console.warn('Audio mixing failed, using first source:', e);
         tracks.push(audioSources[0]);
       }
     }
@@ -179,139 +199,248 @@ async function setupRecorder() {
   
   const combinedStream = new MediaStream(tracks);
   
-  let mimeType = 'video/webm';
-  
-  if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9,opus')) {
-    mimeType = 'video/webm;codecs=vp9,opus';
-  } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp9')) {
-    mimeType = 'video/webm;codecs=vp9';
-  } else if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
-    mimeType = 'video/webm;codecs=vp8,opus';
+  // Find best supported codec
+  recordingMimeType = 'video/webm';
+  const codecs = [
+    'video/webm;codecs=vp9,opus',
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8,opus',
+    'video/webm;codecs=vp8'
+  ];
+  for (const codec of codecs) {
+    if (MediaRecorder.isTypeSupported(codec)) {
+      recordingMimeType = codec;
+      break;
+    }
   }
   
   recorder = new MediaRecorder(combinedStream, { 
-    mimeType: mimeType,
+    mimeType: recordingMimeType,
     videoBitsPerSecond: 8000000,
     audioBitsPerSecond: 128000
   });
   
   recorder.ondataavailable = (event) => {
-    if (event.data.size > 0) {
+    if (event.data && event.data.size > 0) {
       data.push(event.data);
     }
   };
   
-  recorder.onstop = async () => {
-    if (data.length > 0) {
-      const blob = new Blob(data, { type: 'video/webm' });
-      
-      if (blob.size > 0) {
-        const filename = `recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`;
-        
-        // For large files, use blob URL approach (avoids 64MB message limit)
-        // For small files (< 40MB), base64 still works and is simpler
-        const MAX_BASE64_SIZE = 40 * 1024 * 1024; // 40MB (safe margin for 64MiB limit after base64 encoding)
-        
-        if (blob.size < MAX_BASE64_SIZE) {
-          // Small file: use base64 approach
-          await new Promise((resolve) => {
-            const reader = new FileReader();
-            reader.onloadend = async () => {
-              try {
-                await chrome.runtime.sendMessage({
-                  action: 'saveRecording',
-                  data: reader.result,
-                  filename: filename
-                });
-              } catch (e) {
-                // If base64 fails, fall back to download link
-                downloadBlobDirectly(blob, filename);
-              }
-              resolve();
-            };
-            reader.onerror = () => {
-              downloadBlobDirectly(blob, filename);
-              resolve();
-            };
-            reader.readAsDataURL(blob);
-          });
-        } else {
-          // Large file: trigger download directly using a link
-          downloadBlobDirectly(blob, filename);
-        }
-      }
-    }
-    
+  // CRITICAL: Handle MediaRecorder errors instead of swallowing them
+  recorder.onerror = (event) => {
+    console.error('MediaRecorder error:', event.error);
     cleanup();
-    chrome.runtime.sendMessage({ action: 'recordingStopped' });
+    try {
+      chrome.runtime.sendMessage({ action: 'recordingStopped' });
+    } catch (e) {}
   };
   
-  recorder.start(100);
-}
-
-// Download blob directly using a download link (for large files that exceed message size limits)
-function downloadBlobDirectly(blob, filename) {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url;
-  a.download = filename;
-  a.style.display = 'none';
-  document.body.appendChild(a);
-  a.click();
-  
-  // Clean up after a delay to ensure download starts
-  setTimeout(() => {
-    document.body.removeChild(a);
-    URL.revokeObjectURL(url);
-  }, 1000);
-}
-
-function stopRecording() {
-  console.log('stopRecording called, recorder state:', recorder?.state);
-  
-  if (recorder && recorder.state !== 'inactive') {
-    // Request final data chunk if recording
-    if (recorder.state === 'recording') {
-      try {
-        recorder.requestData();
-      } catch (e) {
-        console.error('requestData failed:', e);
+  recorder.onstop = async () => {
+    console.log('recorder.onstop - data chunks:', data.length);
+    
+    // Save the recording
+    try {
+      if (data.length > 0) {
+        const blob = new Blob(data, { type: recordingMimeType });
+        console.log('Recording blob size:', blob.size);
+        if (blob.size > 0) {
+          await saveBlob(blob);
+        }
       }
+    } catch (e) {
+      console.error('Failed to save recording:', e);
     }
     
-    // Stop the recorder after a short delay to allow data to be collected
-    setTimeout(() => {
-      try {
-        if (recorder && recorder.state !== 'inactive') {
-          console.log('Calling recorder.stop()');
-          recorder.stop();
-        }
-      } catch (e) {
-        console.error('recorder.stop() failed:', e);
-        cleanup();
-        chrome.runtime.sendMessage({ action: 'recordingStopped' });
-      }
-    }, 150);
-  } else {
-    console.log('No active recorder, cleaning up');
+    // CRITICAL: cleanup and notify AFTER save is complete
+    // This ensures the save finishes before the offscreen document could be closed
     cleanup();
-    chrome.runtime.sendMessage({ action: 'recordingStopped' });
+    
+    try {
+      chrome.runtime.sendMessage({ action: 'recordingStopped' });
+    } catch (e) {
+      console.warn('Failed to send recordingStopped:', e);
+    }
+  };
+  
+  // Use 1000ms timeslice - much more memory efficient than 100ms
+  // 100ms creates 600 chunks/min vs 60 chunks/min with 1000ms
+  recorder.start(1000);
+  console.log('MediaRecorder started, mimeType:', recordingMimeType);
+}
+
+// Save the recorded blob
+async function saveBlob(blob) {
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
+  const filename = `recording-${timestamp}.webm`;
+  
+  // For files that fit in a single message as base64 (~45MB source → ~60MB base64, under 64MB limit)
+  const MAX_BASE64_SIZE = 45 * 1024 * 1024;
+  
+  if (blob.size < MAX_BASE64_SIZE) {
+    try {
+      const dataUrl = await blobToDataUrl(blob);
+      const response = await chrome.runtime.sendMessage({
+        action: 'saveRecording',
+        data: dataUrl,
+        filename: filename
+      });
+      if (response?.success) {
+        console.log('Recording saved via base64 download');
+        return;
+      }
+    } catch (e) {
+      console.warn('Base64 save failed, trying blob URL:', e.message);
+    }
+  }
+  
+  // For large files or if base64 failed: use blob URL
+  try {
+    const blobUrl = URL.createObjectURL(blob);
+    const response = await chrome.runtime.sendMessage({
+      action: 'saveRecording',
+      data: blobUrl,
+      filename: filename
+    });
+    if (response?.success) {
+      console.log('Recording saved via blob URL download');
+      // Keep blob URL alive long enough for download to read it
+      setTimeout(() => URL.revokeObjectURL(blobUrl), 60000);
+      return;
+    }
+  } catch (e) {
+    console.warn('Blob URL save failed, trying direct download:', e.message);
+  }
+  
+  // Last resort: direct download from offscreen document
+  console.log('Falling back to direct download from offscreen');
+  downloadBlobDirectly(blob, filename);
+}
+
+// Convert blob to data URL
+function blobToDataUrl(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      if (reader.result) {
+        resolve(reader.result);
+      } else {
+        reject(new Error('FileReader returned null'));
+      }
+    };
+    reader.onerror = () => reject(new Error('FileReader failed'));
+    reader.readAsDataURL(blob);
+  });
+}
+
+// Download blob directly using a download link (fallback for large files)
+function downloadBlobDirectly(blob, filename) {
+  try {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.style.display = 'none';
+    document.body.appendChild(a);
+    a.click();
+    
+    setTimeout(() => {
+      try { document.body.removeChild(a); } catch (e) {}
+      URL.revokeObjectURL(url);
+    }, 5000);
+  } catch (e) {
+    console.error('Direct download failed:', e);
+  }
+}
+
+// Stop recording
+// FIXED: Removed the dangerous setTimeout(150ms) hack that caused race conditions.
+// MediaRecorder.stop() automatically fires one final 'dataavailable' event with
+// remaining data, then fires 'stop'. No need for requestData() + delayed stop().
+function stopRecording() {
+  console.log('stopRecording called, recorder state:', recorder?.state, 'isStopping:', isStopping);
+  
+  // CRITICAL: Prevent concurrent stops (e.g., user clicks Stop AND browser's "Stop sharing" fires)
+  if (isStopping) {
+    console.log('Already stopping, ignoring duplicate call');
+    return;
+  }
+  isStopping = true;
+  
+  if (recorder && recorder.state !== 'inactive') {
+    try {
+      // stop() fires final dataavailable then onstop - no setTimeout needed
+      recorder.stop();
+      console.log('recorder.stop() called successfully');
+    } catch (e) {
+      console.error('recorder.stop() failed:', e);
+      cleanup();
+      try { chrome.runtime.sendMessage({ action: 'recordingStopped' }); } catch (e2) {}
+    }
+  } else {
+    console.log('No active recorder, sending recordingStopped');
+    cleanup();
+    try { chrome.runtime.sendMessage({ action: 'recordingStopped' }); } catch (e) {}
+  }
+}
+
+// Discard recording (stop without saving, full cleanup including streams)
+function discardRecording() {
+  data = [];
+  
+  if (recorder && recorder.state !== 'inactive') {
+    // Override onstop to skip saving and NOT send recordingStopped
+    // (the caller handles its own cleanup)
+    recorder.onstop = () => {
+      console.log('Discard: recorder stopped, skipping save');
+      cleanup();
+    };
+    try {
+      recorder.stop();
+    } catch (e) {
+      cleanup();
+    }
+  } else {
+    cleanup();
+  }
+}
+
+// Reset for re-recording: stop recorder but KEEP streams alive
+// FIXED: The old resetRecording flow called discardRecording which killed the streams,
+// then tried to re-record with dead streams (always failed silently)
+function resetForRerecord() {
+  data = [];
+  isStopping = false;
+  
+  if (recorder && recorder.state !== 'inactive') {
+    // Override onstop to just clean up the recorder, NOT the streams
+    recorder.onstop = () => {
+      console.log('Reset: recorder stopped, keeping streams alive');
+      recorder = null;
+    };
+    try {
+      recorder.stop();
+    } catch (e) {
+      recorder = null;
+    }
+  } else {
+    recorder = null;
   }
 }
 
 function cleanup() {
   if (screenStream) {
-    screenStream.getTracks().forEach(t => t.stop());
+    try { screenStream.getTracks().forEach(t => t.stop()); } catch (e) {}
     screenStream = null;
   }
   
   if (micStream) {
-    micStream.getTracks().forEach(t => t.stop());
+    try { micStream.getTracks().forEach(t => t.stop()); } catch (e) {}
     micStream = null;
   }
   
   recorder = null;
   data = [];
+  isStopping = false;
 }
 
 // Capture screenshot using getDisplayMedia
