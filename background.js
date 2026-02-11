@@ -11,9 +11,6 @@ let state = {
   injectedTabs: new Set() // Track all tabs with injected controls
 };
 
-// Track recording downloads so we can notify offscreen when blob URL can be revoked
-const pendingRecordingDownloads = new Set();
-
 // Central error reporting - store and surface to user
 async function reportError(message, options = {}) {
   const friendlyMessage = message || 'An unexpected error occurred';
@@ -42,19 +39,6 @@ chrome.commands.onCommand.addListener(async (command) => {
   } else if (command === 'stop-recording') {
     if (state.isRecording) {
       await stopRecording();
-    }
-  }
-});
-
-chrome.downloads.onChanged.addListener((delta) => {
-  if (delta.id && delta.state && pendingRecordingDownloads.has(delta.id)) {
-    if (delta.state.current === 'complete' || delta.state.current === 'interrupted') {
-      pendingRecordingDownloads.delete(delta.id);
-      chrome.runtime.sendMessage({
-        target: 'offscreen',
-        action: 'downloadComplete',
-        downloadId: delta.id
-      }).catch(() => {});
     }
   }
 });
@@ -658,11 +642,6 @@ async function saveRecording(dataOrUrl, filename) {
       filename: filename,
       saveAs: true
     });
-
-    // Track blob URL downloads so we can notify offscreen when download completes
-    if (dataOrUrl.startsWith('blob:')) {
-      pendingRecordingDownloads.add(downloadId);
-    }
     
     return { success: true, downloadId };
   } catch (e) {
