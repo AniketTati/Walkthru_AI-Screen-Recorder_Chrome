@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scripts - Screen Recorder</title>
+  <link rel="stylesheet" href="scripts.css">
+</head>
+<body>
+  <div class="container">
+    <!-- List View -->
+    <div id="listView" class="view">
+      <header class="header">
+        <h1>Scripts</h1>
+        <button id="newScriptBtn" class="btn-primary">+ New script</button>
+      </header>
+      <div id="scriptList" class="script-list"></div>
+      <div id="emptyState" class="empty-state hidden">
+        <p>No scripts yet. Create one to get started.</p>
+        <button id="emptyCreateBtn" class="btn-primary">Create script</button>
+      </div>
+    </div>
+
+    <!-- Editor View -->
+    <div id="editorView" class="view hidden">
+      <header class="header">
+        <a id="backBtn" href="#" class="back-link">← Back</a>
+        <h2 id="editorTitle">New script</h2>
+      </header>
+      <form id="scriptForm" class="editor-form">
+        <div class="form-row">
+          <label for="scriptName">Name</label>
+          <input type="text" id="scriptName" placeholder="e.g. Product Demo" required>
+        </div>
+        <div class="form-row">
+          <label>Scroll speed</label>
+          <div class="radio-group">
+            <label><input type="radio" name="speed" value="80"> Slow (80 WPM)</label>
+            <label><input type="radio" name="speed" value="120" checked> Medium (120 WPM)</label>
+            <label><input type="radio" name="speed" value="160"> Fast (160 WPM)</label>
+          </div>
+        </div>
+        <div class="form-row">
+          <label for="scriptContent">Script</label>
+          <textarea id="scriptContent" rows="12" placeholder="Paste your script from Google Doc, Word, etc. (Ctrl+V)"></textarea>
+        </div>
+        <div class="form-row">
+          <button type="button" id="addTimelineBtn" class="btn-secondary">Add timeline point at cursor</button>
+        </div>
+        <div id="timelineList" class="timeline-list"></div>
+        <div id="timelineError" class="error-msg hidden"></div>
+        <div class="form-actions">
+          <button type="submit" id="saveBtn" class="btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Add Timeline Modal -->
+    <div id="timelineModal" class="modal hidden">
+      <div class="modal-content">
+        <h3>Add timeline point</h3>
+        <p class="modal-hint">Show this position at:</p>
+        <input type="text" id="timelineInput" placeholder="e.g. 3:00 or 1:30" maxlength="8">
+        <div class="modal-actions">
+          <button type="button" id="timelineCancel" class="btn-secondary">Cancel</button>
+          <button type="button" id="timelineConfirm" class="btn-primary">Add</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  <script src="scripts.js"></script>
+</body>
+</html>

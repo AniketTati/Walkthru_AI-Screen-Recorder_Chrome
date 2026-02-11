@@ -25,6 +25,9 @@ const photoPreview = document.getElementById('photoPreview');
 const photoUpload = document.getElementById('photoUpload');
 const photoUrl = document.getElementById('photoUrl');
 const removePhotoBtn = document.getElementById('removePhotoBtn');
+const scriptSelect = document.getElementById('scriptSelect');
+const scriptRow = document.getElementById('scriptRow');
+const manageScriptsLink = document.getElementById('manageScriptsLink');
 const startBtn = document.getElementById('startBtn');
 const recordingStatus = document.getElementById('recordingStatus');
 const recordingTime = document.getElementById('recordingTime');
@@ -45,6 +48,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await checkRecordingState();
   await enumerateDevices();
   await loadSavedPreferences();
+  await loadScripts();
   updateModeUI();
   setupEventListeners();
   if (currentMode === 'video') updateMicLevelMeter();
@@ -109,10 +113,25 @@ async function enumerateDevices() {
   }
 }
 
+// Load scripts for dropdown
+async function loadScripts() {
+  try {
+    const { teleprompterScripts: scripts } = await chrome.storage.local.get('teleprompterScripts');
+    const list = scripts || [];
+    scriptSelect.innerHTML = '<option value="">No script</option>';
+    list.forEach(s => {
+      const opt = document.createElement('option');
+      opt.value = s.id;
+      opt.textContent = s.name;
+      scriptSelect.appendChild(opt);
+    });
+  } catch (e) {}
+}
+
 // Load saved preferences
 async function loadSavedPreferences() {
   try {
-    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'cameraBubbleSize', 'profilePhoto', 'filenamePrefix', 'mode']);
+    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'cameraBubbleSize', 'profilePhoto', 'filenamePrefix', 'mode', 'teleprompterScriptId']);
     
     if (prefs.mode === 'photo' || prefs.mode === 'video') {
       currentMode = prefs.mode;
@@ -148,6 +167,9 @@ async function loadSavedPreferences() {
       profilePhotoData = prefs.profilePhoto;
       updatePhotoPreview();
     }
+    if (prefs.teleprompterScriptId && scriptSelect?.querySelector(`option[value="${prefs.teleprompterScriptId}"]`)) {
+      scriptSelect.value = prefs.teleprompterScriptId;
+    }
     
     updateCameraOptionsVisibility();
   } catch (e) {
@@ -168,7 +190,8 @@ async function savePreferences() {
       cameraBubbleSize: cameraSizeSelect?.value || 'medium',
       profilePhoto: profilePhotoData,
       filenamePrefix: filenamePrefix.value.trim(),
-      mode: currentMode
+      mode: currentMode,
+      teleprompterScriptId: scriptSelect?.value || null
     });
   } catch (e) {
     // Failed to save preferences
@@ -241,6 +264,7 @@ function updateModeUI() {
     countdownRow.style.display = 'none';
     cameraRow.style.display = 'none';
     micRow.style.display = 'none';
+    if (scriptRow) scriptRow.style.display = 'none';
     cameraModeRow.style.display = 'none';
     cameraSizeRow.style.display = 'none';
     photoSection.style.display = 'none';
@@ -258,6 +282,7 @@ function updateModeUI() {
     countdownRow.style.display = 'flex';
     cameraRow.style.display = 'flex';
     micRow.style.display = 'flex';
+    if (scriptRow) scriptRow.style.display = 'flex';
     startBtn.textContent = 'Start Recording';
     updateCameraOptionsVisibility();
     updateMicLevelMeter();
@@ -396,6 +421,12 @@ function setupEventListeners() {
   });
   filenamePrefix.addEventListener('input', savePreferences);
   filenamePrefix.addEventListener('blur', savePreferences);
+  scriptSelect.addEventListener('change', savePreferences);
+
+  manageScriptsLink.addEventListener('click', (e) => {
+    e.preventDefault();
+    chrome.tabs.create({ url: chrome.runtime.getURL('scripts.html') });
+  });
 
   photoUpload.addEventListener('change', (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -489,7 +520,8 @@ async function startRecording() {
     cameraMode: cameraModeSelect.value,
     cameraBubbleSize: cameraSizeSelect?.value || 'medium',
     profilePhoto: profilePhotoData || null,
-    filenamePrefix: filenamePrefix.value.trim() || null
+    filenamePrefix: filenamePrefix.value.trim() || null,
+    teleprompterScriptId: scriptSelect?.value || null
   };
 
   try {
