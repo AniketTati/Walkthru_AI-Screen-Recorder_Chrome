@@ -104,18 +104,30 @@ chrome.tabs.onUpdated.addListener(async (tabId, changeInfo, tab) => {
   }
 });
 
+// Get teleprompter script data if script ID is set
+async function getTeleprompterScriptData() {
+  const scriptId = state.config?.teleprompterScriptId;
+  if (!scriptId) return null;
+  const { teleprompterScripts: scripts } = await chrome.storage.local.get('teleprompterScripts');
+  const script = (scripts || []).find(s => s.id === scriptId);
+  return script ? { content: script.content, defaultSpeed: script.defaultSpeed || 120, timelinePoints: script.timelinePoints || [] } : null;
+}
+
 // Inject controls into a specific tab
 async function injectControlsIntoTab(tabId) {
   try {
     // First inject the content script if not already
     await injectContentScript(tabId);
     
+    const teleprompterScript = await getTeleprompterScriptData();
+    
     // Show the floating controls
     await chrome.tabs.sendMessage(tabId, {
       action: 'showFloatingControls',
       config: state.config,
       startTime: state.startTime,
-      isPaused: state.isPaused
+      isPaused: state.isPaused,
+      teleprompterScript
     });
     
     state.injectedTabs.add(tabId);
@@ -172,6 +184,9 @@ async function handleMessage(message, sender) {
 
     case 'toggleCameraBubble':
       return await toggleCameraBubble();
+
+    case 'toggleTeleprompter':
+      return await toggleTeleprompter();
 
     case 'countdownComplete':
       return await onCountdownComplete();
@@ -314,9 +329,12 @@ async function onCountdownComplete() {
       throw new Error(response?.error || 'Failed to start recording in offscreen');
     }
 
+    const teleprompterScript = await getTeleprompterScriptData();
+
     await chrome.tabs.sendMessage(state.activeTabId, {
       action: 'showFloatingControls',
-      config: state.config
+      config: state.config,
+      teleprompterScript
     });
 
     return { success: true };
@@ -503,6 +521,20 @@ async function toggleCameraBubble() {
     if (state.activeTabId) {
       await chrome.tabs.sendMessage(state.activeTabId, {
         action: 'toggleCameraBubble'
+      });
+    }
+    return { success: true };
+  } catch (e) {
+    return { success: false, error: e.message };
+  }
+}
+
+// Toggle teleprompter overlay visibility
+async function toggleTeleprompter() {
+  try {
+    if (state.activeTabId) {
+      await chrome.tabs.sendMessage(state.activeTabId, {
+        action: 'toggleTeleprompter'
       });
     }
     return { success: true };
