@@ -206,21 +206,39 @@ async function setupRecorder() {
       const blob = new Blob(data, { type: 'video/webm' });
       
       if (blob.size > 0) {
-        // Wait for file reading to complete before cleanup
-        await new Promise((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = async () => {
-            const base64data = reader.result;
-            await chrome.runtime.sendMessage({
-              action: 'saveRecording',
-              data: base64data,
-              filename: `recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`
-            });
-            resolve();
-          };
-          reader.onerror = () => resolve();
-          reader.readAsDataURL(blob);
-        });
+        const filename = `recording-${new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19)}.webm`;
+        
+        // For large files, use blob URL approach (avoids 64MB message limit)
+        // For small files (< 40MB), base64 still works and is simpler
+        const MAX_BASE64_SIZE = 40 * 1024 * 1024; // 40MB (safe margin for 64MiB limit after base64 encoding)
+        
+        if (blob.size < MAX_BASE64_SIZE) {
+          // Small file: use base64 approach
+          await new Promise((resolve) => {
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+              try {
+                await chrome.runtime.sendMessage({
+                  action: 'saveRecording',
+                  data: reader.result,
+                  filename: filename
+                });
+              } catch (e) {
+                // If base64 fails, fall back to download link
+                downloadBlobDirectly(blob, filename);
+              }
+              resolve();
+            };
+            reader.onerror = () => {
+              downloadBlobDirectly(blob, filename);
+              resolve();
+            };
+            reader.readAsDataURL(blob);
+          });
+        } else {
+          // Large file: trigger download directly using a link
+          downloadBlobDirectly(blob, filename);
+        }
       }
     }
     
@@ -231,18 +249,51 @@ async function setupRecorder() {
   recorder.start(100);
 }
 
+// Download blob directly using a download link (for large files that exceed message size limits)
+function downloadBlobDirectly(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.style.display = 'none';
+  document.body.appendChild(a);
+  a.click();
+  
+  // Clean up after a delay to ensure download starts
+  setTimeout(() => {
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }, 1000);
+}
+
 function stopRecording() {
+  console.log('stopRecording called, recorder state:', recorder?.state);
+  
   if (recorder && recorder.state !== 'inactive') {
+    // Request final data chunk if recording
     if (recorder.state === 'recording') {
-      recorder.requestData();
+      try {
+        recorder.requestData();
+      } catch (e) {
+        console.error('requestData failed:', e);
+      }
     }
     
+    // Stop the recorder after a short delay to allow data to be collected
     setTimeout(() => {
-      if (recorder && recorder.state !== 'inactive') {
-        recorder.stop();
+      try {
+        if (recorder && recorder.state !== 'inactive') {
+          console.log('Calling recorder.stop()');
+          recorder.stop();
+        }
+      } catch (e) {
+        console.error('recorder.stop() failed:', e);
+        cleanup();
+        chrome.runtime.sendMessage({ action: 'recordingStopped' });
       }
-    }, 100);
+    }, 150);
   } else {
+    console.log('No active recorder, cleaning up');
     cleanup();
     chrome.runtime.sendMessage({ action: 'recordingStopped' });
   }

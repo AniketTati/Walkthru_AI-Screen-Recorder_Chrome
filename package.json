@@ -1,0 +1,27 @@
+{
+  "name": "screen-recorder-extension",
+  "version": "2.0.0",
+  "description": "Chrome extension for screen recording with camera overlay",
+  "private": true,
+  "scripts": {
+    "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
+    "test:unit": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathPattern=tests/unit",
+    "test:e2e": "node --experimental-vm-modules node_modules/jest/bin/jest.js --testPathPattern=tests/e2e",
+    "test:watch": "node --experimental-vm-modules node_modules/jest/bin/jest.js --watch"
+  },
+  "devDependencies": {
+    "jest": "^29.7.0",
+    "puppeteer": "^22.0.0",
+    "@types/chrome": "^0.0.260"
+  },
+  "jest": {
+    "testEnvironment": "node",
+    "testMatch": [
+      "**/tests/**/*.test.js"
+    ],
+    "setupFilesAfterEnv": [
+      "./tests/setup.js"
+    ],
+    "testTimeout": 30000
+  }
+}

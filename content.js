@@ -33,8 +33,19 @@
     camera: `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="23 7 16 12 23 17 23 7"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>`
   };
 
-  // Message handler
+  // Message handler - only handle messages meant for content script
   chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
+    // Ignore messages meant for offscreen document
+    if (message.target === 'offscreen') {
+      return false;
+    }
+    
+    // Only handle known content script actions
+    const handledActions = ['ping', 'showCountdown', 'showFloatingControls', 'hideFloatingControls', 'updateControls', 'toggleCameraBubble'];
+    if (!handledActions.includes(message.action)) {
+      return false; // Don't handle this message
+    }
+    
     try {
       switch (message.action) {
         case 'ping':
@@ -291,21 +302,40 @@
 
   // Handle control actions
   function handleControlAction(action) {
+    // Find the button and show visual feedback
+    const btn = controlBar?.querySelector(`[data-action="${action}"]`);
+    if (btn) {
+      btn.style.opacity = '0.6';
+      setTimeout(() => {
+        if (btn) btn.style.opacity = '1';
+      }, 200);
+    }
+    
     switch (action) {
       case 'stop':
-        chrome.runtime.sendMessage({ action: 'stopRecording' });
+        // Show stopping state
+        if (btn) {
+          btn.innerHTML = `${icons.stop}<span>Stopping...</span>`;
+          btn.disabled = true;
+        }
+        chrome.runtime.sendMessage({ action: 'stopRecording' })
+          .catch(err => console.error('Stop recording failed:', err));
         break;
       case 'pause':
-        chrome.runtime.sendMessage({ action: 'pauseRecording' });
+        chrome.runtime.sendMessage({ action: 'pauseRecording' })
+          .catch(err => console.error('Pause failed:', err));
         break;
       case 'resume':
-        chrome.runtime.sendMessage({ action: 'resumeRecording' });
+        chrome.runtime.sendMessage({ action: 'resumeRecording' })
+          .catch(err => console.error('Resume failed:', err));
         break;
       case 'reset':
-        chrome.runtime.sendMessage({ action: 'resetRecording' });
+        chrome.runtime.sendMessage({ action: 'resetRecording' })
+          .catch(err => console.error('Reset failed:', err));
         break;
       case 'delete':
-        chrome.runtime.sendMessage({ action: 'deleteRecording' });
+        chrome.runtime.sendMessage({ action: 'deleteRecording' })
+          .catch(err => console.error('Delete failed:', err));
         break;
       case 'toggleCamera':
         toggleCameraBubble();

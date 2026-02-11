@@ -113,6 +113,11 @@
 .sr-control-btn svg {
   width: 18px;
   height: 18px;
+  pointer-events: none; /* Ensure clicks go through to button */
+}
+
+.sr-control-btn span {
+  pointer-events: none; /* Ensure clicks go through to button */
 }
 
 .sr-control-btn.stop {
