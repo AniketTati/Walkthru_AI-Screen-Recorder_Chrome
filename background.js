@@ -243,7 +243,8 @@ async function captureScreenshot(config) {
       
       const dataUrl = await chrome.tabs.captureVisibleTab(null, { format: 'png' });
       const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
-      const filename = `screenshot-${timestamp}.png`;
+      const prefix = (config.filenamePrefix || '').replace(/[^a-zA-Z0-9_-]/g, '');
+      const filename = prefix ? `${prefix}-screenshot-${timestamp}.png` : `screenshot-${timestamp}.png`;
       
       const downloadId = await chrome.downloads.download({
         url: dataUrl,

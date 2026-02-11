@@ -6,11 +6,16 @@ const previewPlaceholder = document.getElementById('previewPlaceholder');
 const previewSection = document.querySelector('.preview-section');
 const sourceSelect = document.getElementById('sourceSelect');
 const qualitySelect = document.getElementById('qualitySelect');
+const countdownSelect = document.getElementById('countdownSelect');
 const cameraSelect = document.getElementById('cameraSelect');
 const micSelect = document.getElementById('micSelect');
+const filenamePrefix = document.getElementById('filenamePrefix');
 const qualityRow = document.getElementById('qualityRow');
+const countdownRow = document.getElementById('countdownRow');
 const cameraRow = document.getElementById('cameraRow');
 const micRow = document.getElementById('micRow');
+const prefixRow = document.getElementById('prefixRow');
+const micLevelBar = document.getElementById('micLevelBar');
 const cameraModeRow = document.getElementById('cameraModeRow');
 const cameraModeSelect = document.getElementById('cameraModeSelect');
 const photoSection = document.getElementById('photoSection');
@@ -25,6 +30,9 @@ const errorMsg = document.getElementById('errorMsg');
 
 // State
 let previewStream = null;
+let micStream = null;
+let micAnalyser = null;
+let micAnimationId = null;
 let timerInterval = null;
 let profilePhotoData = null;
 let currentMode = 'video';
@@ -36,6 +44,7 @@ document.addEventListener('DOMContentLoaded', async () => {
   await enumerateDevices();
   await loadSavedPreferences();
   setupEventListeners();
+  if (currentMode === 'video') updateMicLevelMeter();
 });
 
 // Check for stored error from background (e.g. recording failure when popup was closed)
@@ -100,13 +109,19 @@ async function enumerateDevices() {
 // Load saved preferences
 async function loadSavedPreferences() {
   try {
-    const prefs = await chrome.storage.local.get(['source', 'quality', 'cameraId', 'micId', 'cameraMode', 'profilePhoto']);
+    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'profilePhoto', 'filenamePrefix']);
     
     if (prefs.source) {
       sourceSelect.value = prefs.source;
     }
     if (prefs.quality && qualitySelect.querySelector(`option[value="${prefs.quality}"]`)) {
       qualitySelect.value = prefs.quality;
+    }
+    if (prefs.countdownDuration && countdownSelect.querySelector(`option[value="${prefs.countdownDuration}"]`)) {
+      countdownSelect.value = prefs.countdownDuration;
+    }
+    if (prefs.filenamePrefix) {
+      filenamePrefix.value = prefs.filenamePrefix;
     }
     if (prefs.cameraId && cameraSelect.querySelector(`option[value="${prefs.cameraId}"]`)) {
       cameraSelect.value = prefs.cameraId;
@@ -135,14 +150,61 @@ async function savePreferences() {
     await chrome.storage.local.set({
       source: sourceSelect.value,
       quality: qualitySelect.value,
+      countdownDuration: countdownSelect.value,
       cameraId: cameraSelect.value,
       micId: micSelect.value,
       cameraMode: cameraModeSelect.value,
-      profilePhoto: profilePhotoData
+      profilePhoto: profilePhotoData,
+      filenamePrefix: filenamePrefix.value.trim()
     });
   } catch (e) {
     // Failed to save preferences
   }
+}
+
+// Microphone level meter
+function updateMicLevelMeter() {
+  stopMicLevelMeter();
+  if (!micSelect.value) {
+    micLevelBar.classList.add('hidden');
+    return;
+  }
+  micLevelBar.classList.remove('hidden');
+  navigator.mediaDevices.getUserMedia({ audio: { deviceId: micSelect.value } })
+    .then((stream) => {
+      micStream = stream;
+      const ctx = new AudioContext();
+      const source = ctx.createMediaStreamSource(stream);
+      micAnalyser = ctx.createAnalyser();
+      micAnalyser.fftSize = 256;
+      micAnalyser.smoothingTimeConstant = 0.8;
+      source.connect(micAnalyser);
+      const data = new Uint8Array(micAnalyser.frequencyBinCount);
+      
+      function update() {
+        if (!micAnalyser) return;
+        micAnalyser.getByteFrequencyData(data);
+        const avg = data.reduce((a, b) => a + b, 0) / data.length;
+        const level = Math.min(100, (avg / 128) * 100);
+        micLevelBar.querySelector('.mic-level-fill').style.width = level + '%';
+        micAnimationId = requestAnimationFrame(update);
+      }
+      update();
+    })
+    .catch(() => micLevelBar.classList.add('hidden'));
+}
+
+function stopMicLevelMeter() {
+  if (micAnimationId) {
+    cancelAnimationFrame(micAnimationId);
+    micAnimationId = null;
+  }
+  if (micStream) {
+    micStream.getTracks().forEach(t => t.stop());
+    micStream = null;
+  }
+  micAnalyser = null;
+  micLevelBar.classList.add('hidden');
 }
 
 // Update camera options visibility
@@ -161,11 +223,13 @@ function updateModeUI() {
   if (currentMode === 'photo') {
     previewSection.style.display = 'none';
     qualityRow.style.display = 'none';
+    countdownRow.style.display = 'none';
     cameraRow.style.display = 'none';
     micRow.style.display = 'none';
     cameraModeRow.style.display = 'none';
     photoSection.style.display = 'none';
     startBtn.textContent = 'Take Screenshot';
+    stopMicLevelMeter();
     
     if (previewStream) {
       previewStream.getTracks().forEach(track => track.stop());
@@ -175,10 +239,12 @@ function updateModeUI() {
   } else {
     previewSection.style.display = 'block';
     qualityRow.style.display = 'flex';
+    countdownRow.style.display = 'flex';
     cameraRow.style.display = 'flex';
     micRow.style.display = 'flex';
     startBtn.textContent = 'Start Recording';
     updateCameraOptionsVisibility();
+    updateMicLevelMeter();
   }
 }
 
@@ -305,7 +371,13 @@ function setupEventListeners() {
   cameraModeSelect.addEventListener('change', savePreferences);
   sourceSelect.addEventListener('change', savePreferences);
   qualitySelect.addEventListener('change', savePreferences);
-  micSelect.addEventListener('change', savePreferences);
+  countdownSelect.addEventListener('change', savePreferences);
+  micSelect.addEventListener('change', () => {
+    savePreferences();
+    updateMicLevelMeter();
+  });
+  filenamePrefix.addEventListener('input', savePreferences);
+  filenamePrefix.addEventListener('blur', savePreferences);
 
   photoUpload.addEventListener('change', (e) => {
     if (e.target.files && e.target.files[0]) {
@@ -393,10 +465,12 @@ async function startRecording() {
   const config = {
     source: sourceSelect.value,
     quality: qualitySelect.value,
+    countdownDuration: parseInt(countdownSelect.value, 10) || 3,
     cameraId: cameraSelect.value || null,
     micId: micSelect.value || null,
     cameraMode: cameraModeSelect.value,
-    profilePhoto: profilePhotoData || null
+    profilePhoto: profilePhotoData || null,
+    filenamePrefix: filenamePrefix.value.trim() || null
   };
 
   try {
@@ -433,7 +507,10 @@ async function takeScreenshot() {
   try {
     const response = await chrome.runtime.sendMessage({
       action: 'captureScreenshot',
-      config: { source }
+      config: {
+        source,
+        filenamePrefix: filenamePrefix?.value?.trim() || null
+      }
     });
 
     if (response && response.success) {
@@ -502,4 +579,5 @@ window.addEventListener('unload', () => {
   if (previewStream) {
     previewStream.getTracks().forEach(track => track.stop());
   }
+  stopMicLevelMeter();
 });

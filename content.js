@@ -92,6 +92,12 @@
   function showCountdown() {
     removeCountdown();
     
+    const duration = Math.min(10, Math.max(0, parseInt(config?.countdownDuration, 10) || 3));
+    if (duration <= 0) {
+      chrome.runtime.sendMessage({ action: 'countdownComplete' });
+      return;
+    }
+    
     countdownOverlay = document.createElement('div');
     countdownOverlay.className = 'sr-countdown-overlay';
     countdownOverlay.id = 'sr-countdown-overlay';
@@ -143,7 +149,7 @@
     countdownOverlay.appendChild(cancelBtn);
     document.body.appendChild(countdownOverlay);
     
-    let count = 3;
+    let count = duration;
     
     function showNumber() {
       if (count > 0) {

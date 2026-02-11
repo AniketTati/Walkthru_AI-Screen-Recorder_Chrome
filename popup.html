@@ -89,6 +89,22 @@
         </select>
       </div>
 
+      <!-- Countdown (video mode only) -->
+      <div class="setting-row" id="countdownRow">
+        <div class="setting-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polyline points="12 6 12 12 16 14"></polyline>
+          </svg>
+        </div>
+        <select id="countdownSelect" class="setting-select">
+          <option value="0">Start immediately</option>
+          <option value="3">3 sec countdown</option>
+          <option value="5">5 sec countdown</option>
+          <option value="10">10 sec countdown</option>
+        </select>
+      </div>
+
       <!-- Microphone -->
       <div class="setting-row" id="micRow">
         <div class="setting-icon">
@@ -99,9 +115,27 @@
             <line x1="8" y1="23" x2="16" y2="23"></line>
           </svg>
         </div>
-        <select id="micSelect" class="setting-select">
-          <option value="">No Microphone</option>
-        </select>
+        <div class="mic-setting">
+          <select id="micSelect" class="setting-select">
+            <option value="">No Microphone</option>
+          </select>
+          <div id="micLevelBar" class="mic-level-bar hidden" title="Microphone level">
+            <div id="micLevelFill" class="mic-level-fill"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Filename prefix -->
+      <div class="setting-row" id="prefixRow">
+        <div class="setting-icon">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path>
+            <polyline points="14 2 14 8 20 8"></polyline>
+            <line x1="12" y1="18" x2="12" y2="12"></line>
+            <line x1="9" y1="15" x2="15" y2="15"></line>
+          </svg>
+        </div>
+        <input type="text" id="filenamePrefix" class="setting-input" placeholder="Filename prefix (optional)" maxlength="50">
       </div>
 
       <!-- Camera Mode (shown when camera selected) -->
