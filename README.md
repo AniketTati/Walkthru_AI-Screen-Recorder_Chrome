@@ -18,6 +18,11 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
   - Live camera bubble (draggable)
   - Static profile photo option
   - Toggle visibility during recording
+  - **Note**: The camera bubble is rendered as a DOM overlay on the page. When recording **Entire Screen** or **Window**, the overlay is part of the captured region and appears in the final video. When recording a **Browser Tab**, the overlay is drawn inside the tab and is included only if the tab content is what’s being shared (not a separate window). If you need the camera always baked into the video regardless of source, use Entire Screen or Window and ensure the bubble is visible in the captured area.
+
+- **Quality Presets**
+  - 720p (HD), 1080p (Full HD), 4K (Ultra HD)
+  - Bitrate scales with resolution for optimal quality
 
 - **Recording Controls**
   - 3-second countdown before recording
@@ -50,12 +55,20 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
 ### Video Recording
 1. Click the extension icon
 2. Select your recording source (Tab, Window, or Screen)
-3. Choose camera and microphone options
-4. Click "Start Recording"
-5. Select what to share in the browser dialog
-6. A 3-second countdown will appear
-7. Use the floating controls to pause, resume, or stop
-8. Recording saves automatically when you stop
+3. Choose quality preset (720p, 1080p, or 4K)
+4. Choose camera and microphone options
+5. Click "Start Recording"
+6. Select what to share in the browser dialog
+7. A 3-second countdown will appear
+8. Use the floating controls to pause, resume, or stop
+9. Recording saves automatically when you stop
+
+### Keyboard Shortcuts
+
+- **Start Recording**: `Ctrl+Shift+R` (Windows/Linux) or `Command+Shift+R` (Mac) — Opens the popup
+- **Stop Recording**: `Ctrl+Shift+S` (Windows/Linux) or `Command+Shift+S` (Mac) — Stops the current recording
+
+You can customize these in `chrome://extensions/shortcuts`.
 
 ### Screenshot
 1. Click the extension icon
@@ -66,7 +79,7 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
 
 ## File Format
 
-- **Video**: WebM with VP9 codec (8 Mbps quality)
+- **Video**: WebM with VP9/VP8 codec. Bitrate depends on quality preset (4–16 Mbps).
 - **Screenshots**: PNG
 
 ## Permissions
@@ -78,6 +91,7 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
 - `scripting`: Inject floating controls
 - `tabs`: Tab management
 - `downloads`: Save recordings
+- `notifications`: Show error alerts when recording fails (e.g. popup closed)
 
 ## Browser Support
 

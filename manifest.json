@@ -10,7 +10,8 @@
     "offscreen",
     "scripting",
     "tabs",
-    "downloads"
+    "downloads",
+    "notifications"
   ],
   "host_permissions": [
     "<all_urls>"
@@ -33,8 +34,28 @@
   },
   "web_accessible_resources": [
     {
-      "resources": ["content.css"],
-      "matches": ["<all_urls>"]
+      "resources": [
+        "content.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
     }
-  ]
+  ],
+  "commands": {
+    "start-recording": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+R",
+        "mac": "Command+Shift+R"
+      },
+      "description": "Start recording"
+    },
+    "stop-recording": {
+      "suggested_key": {
+        "default": "Ctrl+Shift+S",
+        "mac": "Command+Shift+S"
+      },
+      "description": "Stop recording"
+    }
+  }
 }

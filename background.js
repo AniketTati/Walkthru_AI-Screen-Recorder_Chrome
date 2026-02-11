@@ -11,6 +11,54 @@ let state = {
   injectedTabs: new Set() // Track all tabs with injected controls
 };
 
+// Track recording downloads so we can notify offscreen when blob URL can be revoked
+const pendingRecordingDownloads = new Set();
+
+// Central error reporting - store and surface to user
+async function reportError(message, options = {}) {
+  const friendlyMessage = message || 'An unexpected error occurred';
+  await chrome.storage.local.set({ lastError: friendlyMessage });
+  if (options.showBadge) {
+    chrome.action.setBadgeText({ text: '!' });
+    chrome.action.setBadgeBackgroundColor({ color: '#ff4757' });
+  }
+  if (options.notify && chrome.notifications) {
+    chrome.notifications.create({
+      type: 'basic',
+      iconUrl: chrome.runtime.getURL('icon48.png'),
+      title: 'Screen Recorder',
+      message: friendlyMessage
+    });
+  }
+}
+
+chrome.commands.onCommand.addListener(async (command) => {
+  if (command === 'start-recording') {
+    try {
+      await chrome.action.openPopup();
+    } catch (e) {
+      console.warn('Could not open popup for start-recording:', e);
+    }
+  } else if (command === 'stop-recording') {
+    if (state.isRecording) {
+      await stopRecording();
+    }
+  }
+});
+
+chrome.downloads.onChanged.addListener((delta) => {
+  if (delta.id && delta.state && pendingRecordingDownloads.has(delta.id)) {
+    if (delta.state.current === 'complete' || delta.state.current === 'interrupted') {
+      pendingRecordingDownloads.delete(delta.id);
+      chrome.runtime.sendMessage({
+        target: 'offscreen',
+        action: 'downloadComplete',
+        downloadId: delta.id
+      }).catch(() => {});
+    }
+  }
+});
+
 // Update badge to show recording status
 function updateBadge(isRecording, isPaused) {
   if (isRecording) {
@@ -99,9 +147,9 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   handleMessage(message, sender)
     .then(sendResponse)
-    .catch(err => {
+    .catch((err) => {
       console.error('handleMessage error:', err);
-      sendResponse({ success: false, error: err.message });
+      sendResponse({ success: false, error: err?.message || 'An unexpected error occurred' });
     });
   return true;
 });
@@ -156,11 +204,21 @@ async function handleMessage(message, sender) {
       return { success: true };
 
     case 'recordingStopped':
+      if (message.error) {
+        await reportError(message.error, { showBadge: true, notify: true });
+      }
       await cleanupRecording();
       return { success: true };
 
     case 'saveRecording':
       return await saveRecording(message.data, message.filename);
+
+    case 'reportError':
+      await reportError(message.message || message.error, {
+        showBadge: !!message.showBadge,
+        notify: !!message.notify
+      });
+      return { success: true };
 
     default:
       return { error: 'Unknown action' };
@@ -592,13 +650,18 @@ async function notifyPopup(action, data) {
 }
 
 // Save recording using chrome.downloads API
-async function saveRecording(base64data, filename) {
+async function saveRecording(dataOrUrl, filename) {
   try {
     const downloadId = await chrome.downloads.download({
-      url: base64data,
+      url: dataOrUrl,
       filename: filename,
       saveAs: true
     });
+
+    // Track blob URL downloads so we can notify offscreen when download completes
+    if (dataOrUrl.startsWith('blob:')) {
+      pendingRecordingDownloads.add(downloadId);
+    }
     
     return { success: true, downloadId };
   } catch (e) {
