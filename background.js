@@ -27,6 +27,11 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     return; // Only handle full-screen/window recording
   }
   
+  // Skip if already injected into this tab
+  if (state.injectedTabs.has(activeInfo.tabId)) {
+    return;
+  }
+  
   try {
     const tab = await chrome.tabs.get(activeInfo.tabId);
     
@@ -38,7 +43,7 @@ chrome.tabs.onActivated.addListener(async (activeInfo) => {
     // Inject controls into the new active tab
     await injectControlsIntoTab(activeInfo.tabId);
   } catch (e) {
-    // Tab might be invalid
+    console.error('Tab activation handler error:', e);
   }
 });
 
@@ -257,13 +262,36 @@ async function onCountdownCancelled() {
 // Stop recording
 async function stopRecording() {
   try {
+    // Check if offscreen document exists
+    const offscreenUrl = chrome.runtime.getURL('offscreen.html');
+    const existing = await chrome.runtime.getContexts({
+      contextTypes: ['OFFSCREEN_DOCUMENT'],
+      documentUrls: [offscreenUrl]
+    });
+    
+    if (existing.length === 0) {
+      // No offscreen document - just cleanup
+      await cleanupRecording();
+      return { success: true };
+    }
+    
+    // Send stop command to offscreen
     const response = await chrome.runtime.sendMessage({
       target: 'offscreen',
       action: 'stopRecording'
     });
+    
+    // Set a timeout to ensure cleanup happens even if offscreen doesn't respond
+    setTimeout(async () => {
+      if (state.isRecording) {
+        console.log('Stop recording timeout - forcing cleanup');
+        await cleanupRecording();
+      }
+    }, 5000);
 
     return { success: true };
   } catch (e) {
+    console.error('Stop recording error:', e);
     await cleanupRecording();
     return { success: false, error: e.message };
   }

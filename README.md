@@ -104,6 +104,88 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
 - For tab recording, audio is captured automatically
 - Verify microphone selection in the extension
 
+## Development
+
+### Prerequisites
+
+- Node.js 18+
+- npm or yarn
+
+### Setup
+
+```bash
+# Install dependencies
+npm install
+```
+
+### Testing
+
+The extension includes comprehensive tests:
+
+```bash
+# Run all tests
+npm test
+
+# Run only unit tests
+npm run test:unit
+
+# Run E2E tests (requires Chrome)
+npm run test:e2e
+
+# Watch mode for development
+npm run test:watch
+```
+
+#### Test Structure
+
+```
+tests/
+├── setup.js              # Mock Chrome APIs and browser globals
+├── unit/
+│   ├── background.test.js    # Background service worker tests
+│   ├── content.test.js       # Content script tests
+│   └── offscreen.test.js     # Offscreen document tests
+└── e2e/
+    └── extension.test.js     # End-to-end browser tests
+```
+
+#### What's Tested
+
+- **Unit Tests**: Test individual functions with mocked Chrome APIs
+  - Badge updates
+  - State management
+  - Message filtering
+  - Timer formatting
+  - Recording size limits
+
+- **E2E Tests**: Load the actual extension in Chrome using Puppeteer
+  - Extension loading
+  - Popup UI elements
+  - Content script injection
+
+#### Manual Testing
+
+For features requiring user interaction (screen recording permission):
+
+1. Load the extension in Chrome (`chrome://extensions/`)
+2. Open Developer Tools (F12) to see console logs
+3. Start a recording and check for:
+   - "REC" badge on extension icon
+   - Floating control bar appears
+   - Timer counts up
+4. Click Stop and verify:
+   - Button shows "Stopping..."
+   - Download dialog appears
+   - Badge clears
+
+### Debugging
+
+Enable verbose logging by opening:
+- **Background**: `chrome://extensions/` → Click "service worker" link
+- **Popup**: Right-click extension icon → Inspect popup
+- **Content Script**: F12 on the web page → Console tab
+- **Offscreen**: `chrome://extensions/` → Check for errors
+
 ## Privacy
 
 This extension:
