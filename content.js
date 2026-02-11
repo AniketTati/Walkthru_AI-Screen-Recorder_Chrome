@@ -709,11 +709,11 @@
     document.body.appendChild(teleprompterBubble);
     setupDraggable(teleprompterBubble);
     
-    // Auto-scroll and timeline sync
-    const speed = teleprompterScript.defaultSpeed || 120;
+    // Timeline sync: scroll position is tied to elapsed time in segments
+    const content = teleprompterScript.content;
     const timelinePoints = (teleprompterScript.timelinePoints || []).sort((a, b) => a.showAt - b.showAt);
+    const speed = teleprompterScript.defaultSpeed || 120;
     const pxPerSec = Math.max(20, Math.min(80, speed * 0.4));
-    let lastScrollTop = 0;
     
     function getElapsedSeconds() {
       if (!startTime) return 0;
@@ -722,44 +722,56 @@
       return elapsed / 1000;
     }
     
+    function getTargetScrollTop(elapsed, maxScroll) {
+      if (maxScroll <= 0 || !content) return 0;
+      const len = content.length;
+      
+      if (timelinePoints.length === 0) {
+        return Math.min(maxScroll, pxPerSec * elapsed);
+      }
+      
+      const pts = timelinePoints;
+      const toScroll = (pos) => Math.min(maxScroll, (pos / len) * maxScroll);
+      
+      // Segment 0: scroll from 0 at speed, cap at first point until elapsed >= showAt[0]
+      if (elapsed < pts[0].showAt) {
+        const natural = pxPerSec * elapsed;
+        const cap = toScroll(pts[0].position);
+        return Math.min(natural, cap);
+      }
+      
+      // Segment i: interpolate from position[i] to position[i+1] over [showAt[i], showAt[i+1]]
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (elapsed >= pts[i].showAt && elapsed < pts[i + 1].showAt) {
+          const segStart = pts[i].showAt;
+          const segEnd = pts[i + 1].showAt;
+          const posStart = toScroll(pts[i].position);
+          const posEnd = toScroll(pts[i + 1].position);
+          const progress = (segEnd - segStart) > 0 ? (elapsed - segStart) / (segEnd - segStart) : 1;
+          return posStart + (posEnd - posStart) * Math.min(1, progress);
+        }
+      }
+      
+      // After last point: scroll from position[last] to end at speed
+      const last = pts[pts.length - 1];
+      const lastScroll = toScroll(last.position);
+      return Math.min(maxScroll, lastScroll + pxPerSec * (elapsed - last.showAt));
+    }
+    
     function scrollTick() {
       if (!teleprompterBubble || !textDiv) return;
       if (isPaused) {
         teleprompterScrollInterval = requestAnimationFrame(scrollTick);
         return;
       }
-      
-      const elapsed = getElapsedSeconds();
-      const content = teleprompterScript.content;
       const maxScroll = textDiv.scrollHeight - textDiv.clientHeight;
       if (maxScroll <= 0) {
         teleprompterScrollInterval = requestAnimationFrame(scrollTick);
         return;
       }
-      
-      let targetScrollTop = lastScrollTop;
-      let shouldJump = false;
-      for (let i = timelinePoints.length - 1; i >= 0; i--) {
-        if (elapsed >= timelinePoints[i].showAt) {
-          const pos = timelinePoints[i].position;
-          if (content && pos < content.length) {
-            const pct = pos / content.length;
-            targetScrollTop = pct * maxScroll;
-            shouldJump = true;
-          }
-          break;
-        }
-      }
-      
-      if (shouldJump) {
-        lastScrollTop = targetScrollTop;
-        textDiv.scrollTop = targetScrollTop;
-      } else {
-        const delta = pxPerSec * 0.016; // ~60fps
-        lastScrollTop = Math.min(maxScroll, lastScrollTop + delta);
-        textDiv.scrollTop = lastScrollTop;
-      }
-      
+      const elapsed = getElapsedSeconds();
+      const target = getTargetScrollTop(elapsed, maxScroll);
+      textDiv.scrollTop = target;
       teleprompterScrollInterval = requestAnimationFrame(scrollTick);
     }
     teleprompterScrollInterval = requestAnimationFrame(scrollTick);
