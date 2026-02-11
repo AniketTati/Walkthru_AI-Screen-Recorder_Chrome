@@ -26,6 +26,7 @@ const photoUpload = document.getElementById('photoUpload');
 const photoUrl = document.getElementById('photoUrl');
 const removePhotoBtn = document.getElementById('removePhotoBtn');
 const scriptSelect = document.getElementById('scriptSelect');
+const scriptDisplayMode = document.getElementById('scriptDisplayMode');
 const scriptRow = document.getElementById('scriptRow');
 const manageScriptsLink = document.getElementById('manageScriptsLink');
 const startBtn = document.getElementById('startBtn');
@@ -131,7 +132,7 @@ async function loadScripts() {
 // Load saved preferences
 async function loadSavedPreferences() {
   try {
-    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'cameraBubbleSize', 'profilePhoto', 'filenamePrefix', 'mode', 'teleprompterScriptId']);
+    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'cameraBubbleSize', 'profilePhoto', 'filenamePrefix', 'mode', 'teleprompterScriptId', 'teleprompterDisplayMode']);
     
     if (prefs.mode === 'photo' || prefs.mode === 'video') {
       currentMode = prefs.mode;
@@ -170,6 +171,9 @@ async function loadSavedPreferences() {
     if (prefs.teleprompterScriptId && scriptSelect?.querySelector(`option[value="${prefs.teleprompterScriptId}"]`)) {
       scriptSelect.value = prefs.teleprompterScriptId;
     }
+    if (prefs.teleprompterDisplayMode && scriptDisplayMode?.querySelector(`option[value="${prefs.teleprompterDisplayMode}"]`)) {
+      scriptDisplayMode.value = prefs.teleprompterDisplayMode;
+    }
     
     updateCameraOptionsVisibility();
   } catch (e) {
@@ -191,7 +195,8 @@ async function savePreferences() {
       profilePhoto: profilePhotoData,
       filenamePrefix: filenamePrefix.value.trim(),
       mode: currentMode,
-      teleprompterScriptId: scriptSelect?.value || null
+      teleprompterScriptId: scriptSelect?.value || null,
+      teleprompterDisplayMode: scriptDisplayMode?.value || 'window'
     });
   } catch (e) {
     // Failed to save preferences
@@ -422,6 +427,7 @@ function setupEventListeners() {
   filenamePrefix.addEventListener('input', savePreferences);
   filenamePrefix.addEventListener('blur', savePreferences);
   scriptSelect.addEventListener('change', savePreferences);
+  scriptDisplayMode.addEventListener('change', savePreferences);
 
   manageScriptsLink.addEventListener('click', (e) => {
     e.preventDefault();
@@ -521,7 +527,8 @@ async function startRecording() {
     cameraBubbleSize: cameraSizeSelect?.value || 'medium',
     profilePhoto: profilePhotoData || null,
     filenamePrefix: filenamePrefix.value.trim() || null,
-    teleprompterScriptId: scriptSelect?.value || null
+    teleprompterScriptId: scriptSelect?.value || null,
+    teleprompterDisplayMode: scriptDisplayMode?.value || 'window'
   };
 
   try {
