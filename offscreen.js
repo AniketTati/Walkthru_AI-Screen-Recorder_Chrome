@@ -10,9 +10,6 @@ let isStopping = false; // Guard against concurrent stop calls
 let recordingMimeType = 'video/webm';
 let currentFilenamePrefix = ''; // Set at startRecording for use in saveBlob
 
-// Track blob URLs for large file downloads - revoke only when download completes
-const pendingBlobUrls = new Map(); // downloadId -> blobUrl
-
 // Message listener
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (message.target !== 'offscreen') {
@@ -66,15 +63,6 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       captureScreenshot(message.config)
         .then(result => sendResponse(result))
         .catch(err => sendResponse({ success: false, error: err.message }));
-      return true;
-
-    case 'downloadComplete':
-      if (message.downloadId && pendingBlobUrls.has(message.downloadId)) {
-        const blobUrl = pendingBlobUrls.get(message.downloadId);
-        URL.revokeObjectURL(blobUrl);
-        pendingBlobUrls.delete(message.downloadId);
-      }
-      sendResponse({ success: true });
       return true;
       
     default:
@@ -308,22 +296,6 @@ async function saveBlob(blob) {
     : `recording-${timestamp}.webm`;
 
   downloadBlobDirectly(blob, filename);
-}
-
-// Convert blob to data URL
-function blobToDataUrl(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onloadend = () => {
-      if (reader.result) {
-        resolve(reader.result);
-      } else {
-        reject(new Error('FileReader returned null'));
-      }
-    };
-    reader.onerror = () => reject(new Error('FileReader failed'));
-    reader.readAsDataURL(blob);
-  });
 }
 
 // Download blob directly - blob stays in this context, no message-passing corruption.

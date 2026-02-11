@@ -17,6 +17,7 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
 - **Camera Overlay**
   - Live camera bubble (draggable)
   - Static profile photo option
+  - Size options: Small (80px), Medium (120px), Large (160px)
   - Toggle visibility during recording
   - **Note**: The camera bubble is rendered as a DOM overlay on the page. When recording **Entire Screen** or **Window**, the overlay is part of the captured region and appears in the final video. When recording a **Browser Tab**, the overlay is drawn inside the tab and is included only if the tab content is what’s being shared (not a separate window). If you need the camera always baked into the video regardless of source, use Entire Screen or Window and ensure the bubble is visible in the captured area.
 
@@ -25,11 +26,16 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
   - Bitrate scales with resolution for optimal quality
 
 - **Recording Controls**
-  - 3-second countdown before recording
+  - Countdown: Start immediately, or 3/5/10 second countdown
   - Floating control bar (draggable)
   - Pause/Resume recording
   - Reset and start over
   - Delete recording
+
+- **Other Options**
+  - Custom filename prefix for recordings and screenshots
+  - Microphone level indicator when mic is selected
+  - All preferences saved locally (no re-configuration needed)
 
 - **Screenshot Mode**
   - Capture tab, window, or screen
@@ -56,12 +62,15 @@ A screen recorder extension with camera overlay, pause/resume, and floating cont
 1. Click the extension icon
 2. Select your recording source (Tab, Window, or Screen)
 3. Choose quality preset (720p, 1080p, or 4K)
-4. Choose camera and microphone options
-5. Click "Start Recording"
-6. Select what to share in the browser dialog
-7. A 3-second countdown will appear
-8. Use the floating controls to pause, resume, or stop
-9. Recording saves automatically when you stop
+4. Choose countdown (Start immediately, or 3/5/10 sec)
+5. Choose camera and microphone options
+6. Optionally add a filename prefix
+7. Click "Start Recording"
+8. Select what to share in the browser dialog
+9. Countdown appears (if not "Start immediately"), then use the floating controls to pause, resume, or stop
+10. Recording saves automatically to your Downloads folder when you stop
+
+**Tip:** Enable Chrome's "Ask where to save each file before downloading" to choose the save location.
 
 ### Keyboard Shortcuts
 
@@ -79,7 +88,7 @@ You can customize these in `chrome://extensions/shortcuts`.
 
 ## File Format
 
-- **Video**: WebM with VP9/VP8 codec. Bitrate depends on quality preset (4–16 Mbps).
+- **Video**: WebM with VP9/VP8 codec. Bitrate depends on quality preset (4–16 Mbps). Recordings are saved directly to your Downloads folder; use Chrome's download settings if you want a "Save As" prompt.
 - **Screenshots**: PNG
 
 ## Permissions
