@@ -469,8 +469,15 @@
     cameraBubbleVisible = true;
   }
   
+  // Get camera bubble size in px from config
+  function getCameraBubbleSize() {
+    const sizes = { small: 80, medium: 120, large: 160 };
+    return sizes[config?.cameraBubbleSize] || 120;
+  }
+
   // Create photo bubble
   function createPhotoBubble() {
+    const size = getCameraBubbleSize();
     cameraBubble = document.createElement('div');
     cameraBubble.className = 'sr-camera-bubble sr-photo';
     cameraBubble.id = 'sr-camera-bubble';
@@ -479,8 +486,8 @@
       position: fixed !important;
       bottom: 100px !important;
       left: 24px !important;
-      width: 120px !important;
-      height: 120px !important;
+      width: ${size}px !important;
+      height: ${size}px !important;
       border-radius: 50% !important;
       overflow: hidden !important;
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
@@ -514,6 +521,7 @@
   
   // Create bubble element with live video
   function createBubbleElement() {
+    const size = getCameraBubbleSize();
     cameraBubble = document.createElement('div');
     cameraBubble.className = 'sr-camera-bubble';
     cameraBubble.id = 'sr-camera-bubble';
@@ -522,8 +530,8 @@
       position: fixed !important;
       bottom: 100px !important;
       left: 24px !important;
-      width: 120px !important;
-      height: 120px !important;
+      width: ${size}px !important;
+      height: ${size}px !important;
       border-radius: 50% !important;
       overflow: hidden !important;
       box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5) !important;
