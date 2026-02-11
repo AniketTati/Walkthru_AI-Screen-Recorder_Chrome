@@ -291,86 +291,22 @@ async function setupRecorder(config) {
     }
   };
   
-  // Use 1000ms timeslice - much more memory efficient than 100ms
-  // 100ms creates 600 chunks/min vs 60 chunks/min with 1000ms
-  recorder.start(1000);
+  // Start without timeslice - produces playable WebM with proper metadata.
+  // Timeslice can cause segments to lack container headers, making concatenated output unplayable.
+  recorder.start();
   console.log('MediaRecorder started, mimeType:', recordingMimeType);
 }
 
 // Save the recorded blob
+// PRIMARY: Direct download from offscreen - blob never leaves this context, avoids
+// base64/blob URL corruption when passing through chrome.runtime.sendMessage.
+// This produces playable WebM files. User can choose location via browser's download prompt.
 async function saveBlob(blob) {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, 19);
   const filename = currentFilenamePrefix
     ? `${currentFilenamePrefix}-recording-${timestamp}.webm`
     : `recording-${timestamp}.webm`;
-  
-  // For files that fit in a single message as base64 (~45MB source → ~60MB base64, under 64MB limit)
-  const MAX_BASE64_SIZE = 45 * 1024 * 1024;
-  
-  if (blob.size < MAX_BASE64_SIZE) {
-    try {
-      const dataUrl = await blobToDataUrl(blob);
-      const response = await chrome.runtime.sendMessage({
-        action: 'saveRecording',
-        data: dataUrl,
-        filename: filename
-      });
-      if (response?.success) {
-        console.log('Recording saved via base64 download');
-        return;
-      }
-      if (response?.error) {
-        chrome.runtime.sendMessage({
-          action: 'reportError',
-          message: response.error,
-          showBadge: true,
-          notify: true
-        }).catch(() => {});
-      }
-    } catch (e) {
-      console.warn('Base64 save failed, trying blob URL:', e.message);
-    }
-  }
-  
-  // For large files or if base64 failed: use blob URL
-  try {
-    const blobUrl = URL.createObjectURL(blob);
-    const response = await chrome.runtime.sendMessage({
-      action: 'saveRecording',
-      data: blobUrl,
-      filename: filename
-    });
-    if (response?.success) {
-      console.log('Recording saved via blob URL download');
-      // Keep blob URL alive until download completes (background notifies via downloadComplete)
-      if (response.downloadId) {
-        pendingBlobUrls.set(response.downloadId, blobUrl);
-      } else {
-        // Fallback: revoke after 5 min if no downloadId
-        setTimeout(() => URL.revokeObjectURL(blobUrl), 300000);
-      }
-      return;
-    }
-    if (response?.error) {
-      chrome.runtime.sendMessage({
-        action: 'reportError',
-        message: response.error,
-        showBadge: true,
-        notify: true
-      }).catch(() => {});
-    }
-  } catch (e) {
-    console.warn('Blob URL save failed, trying direct download:', e.message);
-    chrome.runtime.sendMessage({
-      action: 'reportError',
-      message: 'Failed to save recording. Try direct download.',
-      showBadge: true,
-      notify: true
-    }).catch(() => {});
-  }
-  
-  // Last resort: direct download from offscreen document
-  console.log('Falling back to direct download from offscreen');
+
   downloadBlobDirectly(blob, filename);
 }
 
@@ -390,7 +326,8 @@ function blobToDataUrl(blob) {
   });
 }
 
-// Download blob directly using a download link (fallback for large files)
+// Download blob directly - blob stays in this context, no message-passing corruption.
+// Uses anchor with download attribute; browser may prompt for save location.
 function downloadBlobDirectly(blob, filename) {
   try {
     const url = URL.createObjectURL(blob);
@@ -400,20 +337,21 @@ function downloadBlobDirectly(blob, filename) {
     a.style.display = 'none';
     document.body.appendChild(a);
     a.click();
-    
-    setTimeout(() => {
-      try { document.body.removeChild(a); } catch (e) {}
-      URL.revokeObjectURL(url);
-    }, 5000);
+    document.body.removeChild(a);
+    // Revoke after download has time to start (browser reads the blob URL)
+    setTimeout(() => URL.revokeObjectURL(url), 15000);
   } catch (e) {
     console.error('Direct download failed:', e);
+    chrome.runtime.sendMessage({
+      action: 'reportError',
+      message: 'Failed to save recording.',
+      showBadge: true,
+      notify: true
+    }).catch(() => {});
   }
 }
 
 // Stop recording
-// FIXED: Removed the dangerous setTimeout(150ms) hack that caused race conditions.
-// MediaRecorder.stop() automatically fires one final 'dataavailable' event with
-// remaining data, then fires 'stop'. No need for requestData() + delayed stop().
 function stopRecording() {
   console.log('stopRecording called, recorder state:', recorder?.state, 'isStopping:', isStopping);
   
@@ -426,7 +364,10 @@ function stopRecording() {
   
   if (recorder && recorder.state !== 'inactive') {
     try {
-      // stop() fires final dataavailable then onstop - no setTimeout needed
+      // requestData() flushes any buffered data before stop() - improves WebM playability
+      if (recorder.state === 'recording' || recorder.state === 'paused') {
+        recorder.requestData();
+      }
       recorder.stop();
       console.log('recorder.stop() called successfully');
     } catch (e) {
