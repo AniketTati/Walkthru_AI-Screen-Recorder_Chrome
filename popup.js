@@ -18,6 +18,8 @@ const prefixRow = document.getElementById('prefixRow');
 const micLevelBar = document.getElementById('micLevelBar');
 const cameraModeRow = document.getElementById('cameraModeRow');
 const cameraModeSelect = document.getElementById('cameraModeSelect');
+const cameraSizeRow = document.getElementById('cameraSizeRow');
+const cameraSizeSelect = document.getElementById('cameraSizeSelect');
 const photoSection = document.getElementById('photoSection');
 const photoPreview = document.getElementById('photoPreview');
 const photoUpload = document.getElementById('photoUpload');
@@ -110,7 +112,7 @@ async function enumerateDevices() {
 // Load saved preferences
 async function loadSavedPreferences() {
   try {
-    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'profilePhoto', 'filenamePrefix', 'mode']);
+    const prefs = await chrome.storage.local.get(['source', 'quality', 'countdownDuration', 'cameraId', 'micId', 'cameraMode', 'cameraBubbleSize', 'profilePhoto', 'filenamePrefix', 'mode']);
     
     if (prefs.mode === 'photo' || prefs.mode === 'video') {
       currentMode = prefs.mode;
@@ -139,6 +141,9 @@ async function loadSavedPreferences() {
     if (prefs.cameraMode) {
       cameraModeSelect.value = prefs.cameraMode;
     }
+    if (prefs.cameraBubbleSize && cameraSizeSelect?.querySelector(`option[value="${prefs.cameraBubbleSize}"]`)) {
+      cameraSizeSelect.value = prefs.cameraBubbleSize;
+    }
     if (prefs.profilePhoto) {
       profilePhotoData = prefs.profilePhoto;
       updatePhotoPreview();
@@ -160,6 +165,7 @@ async function savePreferences() {
       cameraId: cameraSelect.value,
       micId: micSelect.value,
       cameraMode: cameraModeSelect.value,
+      cameraBubbleSize: cameraSizeSelect?.value || 'medium',
       profilePhoto: profilePhotoData,
       filenamePrefix: filenamePrefix.value.trim(),
       mode: currentMode
@@ -218,9 +224,11 @@ function stopMicLevelMeter() {
 function updateCameraOptionsVisibility() {
   if (currentMode === 'video' && cameraSelect.value) {
     cameraModeRow.style.display = 'flex';
+    cameraSizeRow.style.display = 'flex';
     photoSection.style.display = 'block';
   } else {
     cameraModeRow.style.display = 'none';
+    cameraSizeRow.style.display = 'none';
     photoSection.style.display = 'none';
   }
 }
@@ -234,6 +242,7 @@ function updateModeUI() {
     cameraRow.style.display = 'none';
     micRow.style.display = 'none';
     cameraModeRow.style.display = 'none';
+    cameraSizeRow.style.display = 'none';
     photoSection.style.display = 'none';
     startBtn.textContent = 'Take Screenshot';
     stopMicLevelMeter();
@@ -377,6 +386,7 @@ function setupEventListeners() {
   });
 
   cameraModeSelect.addEventListener('change', savePreferences);
+  cameraSizeSelect.addEventListener('change', savePreferences);
   sourceSelect.addEventListener('change', savePreferences);
   qualitySelect.addEventListener('change', savePreferences);
   countdownSelect.addEventListener('change', savePreferences);
@@ -477,6 +487,7 @@ async function startRecording() {
     cameraId: cameraSelect.value || null,
     micId: micSelect.value || null,
     cameraMode: cameraModeSelect.value,
+    cameraBubbleSize: cameraSizeSelect?.value || 'medium',
     profilePhoto: profilePhotoData || null,
     filenamePrefix: filenamePrefix.value.trim() || null
   };
