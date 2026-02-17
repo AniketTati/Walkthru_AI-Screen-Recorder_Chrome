@@ -4,6 +4,13 @@ const textEl = document.getElementById('text');
 let scriptData = null;
 let rafId = null;
 
+// Manual scroll: pause auto-scroll briefly, then resume from new position
+let manualScrollActive = false;
+let manualScrollTimer = null;
+let scrollOffset = 0;
+let needOffsetRecalc = false;
+const MANUAL_PAUSE_MS = 3000;
+
 async function loadScript() {
   const { teleprompterActiveScript } = await chrome.storage.local.get('teleprompterActiveScript');
   scriptData = teleprompterActiveScript;
@@ -66,7 +73,7 @@ function scrollLoop() {
     if (!scriptData?.content) return;
     
     const { elapsedMs, isPaused } = await getState();
-    if (isPaused) {
+    if (isPaused || manualScrollActive) {
       rafId = requestAnimationFrame(scrollLoop);
       return;
     }
@@ -77,10 +84,32 @@ function scrollLoop() {
     }
     const elapsed = elapsedMs / 1000;
     const target = getTargetScrollTop(elapsed, maxScroll);
-    textEl.scrollTop = target;
+    
+    // After manual scroll ends, recalculate offset so auto-scroll
+    // resumes from where the user left off instead of jumping back
+    if (needOffsetRecalc) {
+      scrollOffset = textEl.scrollTop - target;
+      needOffsetRecalc = false;
+    }
+    
+    textEl.scrollTop = Math.min(maxScroll, Math.max(0, target + scrollOffset));
     rafId = requestAnimationFrame(scrollLoop);
   })();
 }
+
+// Detect manual scroll via user input events
+function onManualScroll() {
+  manualScrollActive = true;
+  if (manualScrollTimer) clearTimeout(manualScrollTimer);
+  manualScrollTimer = setTimeout(() => {
+    manualScrollActive = false;
+    manualScrollTimer = null;
+    needOffsetRecalc = true;
+  }, MANUAL_PAUSE_MS);
+}
+
+textEl.addEventListener('wheel', onManualScroll, { passive: true });
+textEl.addEventListener('touchstart', onManualScroll, { passive: true });
 
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area === 'local' && changes.teleprompterActiveScript) {
