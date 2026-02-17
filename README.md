@@ -47,6 +47,60 @@ A Chrome extension for screen recording with camera overlay, **teleprompter scri
   - Capture tab, window, or screen
   - Saves as PNG
 
+## TODO
+
+**Goal:** Turn raw screen recordings into polished product walkthroughs automatically.
+
+### Phase 1: Metadata capture (foundation)
+
+Record interaction metadata alongside the video so we can segment and annotate later:
+
+- [ ] **Log DOM events during recording** — Capture clicks, focus changes, and scrolls with timestamps from the content script. Save as JSON sidecar (e.g. `recording.webm` + `recording.events.json`).
+- [ ] **Pause / resume in metadata** — Ensure pause/resume boundaries are stored so we can optionally trim idle or paused segments.
+- [ ] **Teleprompter timeline → metadata** — Export script markers and scroll positions so narration and script sync can be used for chaptering.
+
+### Phase 2: Key moment detection
+
+Identify important segments for highlights, steps, and cuts:
+
+- [ ] **Frame-based change detection** — Use `requestVideoFrameCallback` or WebCodecs to extract frames and detect significant UI changes (pixel diff or perceptual hash).
+- [ ] **Click / interaction clustering** — Treat click locations + timestamps as candidate “key moments” for step boundaries (similar to Zight, Glitter).
+- [ ] **Silence / speech detection** — If mic is used, detect speech vs silence to trim filler or split into logical sections (e.g. via Web Audio or external transcription API).
+- [ ] **AI scene detection** — Optional: use a vision/transcription API to detect “scenes” or “steps” from frames + audio for higher-level segmentation.
+
+### Phase 3: Post-recording processing pipeline
+
+Transform raw recording + metadata into structured content:
+
+- [ ] **Extract step screenshots** — Grab frames at each key moment for step-by-step guides (screenshots per step).
+- [ ] **Generate transcript** — Transcribe audio (Web Speech API, Whisper, or cloud API) with timestamps.
+- [ ] **Auto-generate step descriptions** — Use AI (e.g. vision + transcript) to describe each step (“Click Settings”, “Enter email”, etc.) for guides and captions.
+- [ ] **Produce structured output** — JSON/Markdown step list: `{ steps: [{ time, screenshot, description, click? }] }` for downstream tools.
+
+### Phase 4: Polished walkthrough output
+
+Apply professional walkthrough patterns (zoom, captions, structure):
+
+- [ ] **Step-by-step guide** — Export an interactive or static guide with screenshots + descriptions (HTML/MD or embeddable widget).
+- [ ] **Highlighted video** — Generate a trimmed/split video with zoom-in on clicks (e.g. via Remotion, FFmpeg, or cloud video API).
+- [ ] **Captions / annotations** — Add auto-generated captions or on-screen annotations at key moments.
+- [ ] **Intro / outro support** — Optional templates or placeholders for intro/outro clips (per TechSmith, Wistia best practices).
+- [ ] **Multiple formats** — Support export as: trimmed WebM, GIF highlights, PDF/HTML guide, or link to cloud-rendered polished video.
+
+### Phase 5: UX and integration
+
+- [ ] **“Create walkthrough” action** — After stop, offer “Turn into walkthrough” flow (local processing or send to backend).
+- [ ] **Progress + settings** — UI for choosing output type (guide vs video), quality, and whether to use cloud vs local processing.
+- [ ] **Backend / API option** — Design for optional cloud pipeline (e.g. Hexus, Videate, or custom) for heavy lifting (AI, video rendering) if local isn’t feasible.
+
+### References
+
+- [Hexus AI](https://www.hexus.ai/video-to-demo) — Video → interactive demos
+- [Glitter AI](https://www.glitter.io/) — Video → step-by-step guides
+- [Zight](https://zight.com/step-by-step-guide/) — Clicks/actions → structured guides
+- [RecordIt](https://recordit.dev/) — Recording with debug metadata
+- [WebCodecs / requestVideoFrameCallback](https://web.dev/articles/requestvideoframecallback-rvfc) — Frame-level video processing
+
 ## Installation
 
 ### From Chrome Web Store
